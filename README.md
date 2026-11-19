@@ -29,16 +29,31 @@ Sinewave aims to make it simple to run digital signage on ordinary hardware: bui
 
 ## Quick start
 
-You need Docker with Compose. Sinewave is a single container with no separate database to run.
+You need Docker with Compose. Sinewave is a single container with no separate database to run. Save this as `docker-compose.yml`, change the password, and run `docker compose up -d`:
 
-```sh
-git clone https://github.com/elliottmarter/Sinewave.git sinewave
-cd sinewave
-cp .env.example .env        # then set ADMIN_PASSWORD
-docker compose up -d --build
+```yaml
+services:
+  sinewave:
+    image: ghcr.io/elliottmarter/sinewave:latest
+    container_name: sinewave
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      ADMIN_PASSWORD: change-me      # dashboard password
+      # SECURE_COOKIES: "true"       # set both when serving over HTTPS behind a reverse proxy
+      # TRUST_PROXY: "true"
+      # MAX_UPLOAD_MB: "1024"
+    volumes:
+      - sinewave-data:/data          # SQLite database and uploaded media
+
+volumes:
+  sinewave-data:
 ```
 
-1. Open **http://localhost:8080** and sign in with your `ADMIN_PASSWORD` (it defaults to `admin` if you skip `.env`).
+The image is built for `amd64` and `arm64`, so it also runs on a Raspberry Pi 4 or 5.
+
+1. Open **http://localhost:8080** and sign in with your `ADMIN_PASSWORD`.
 2. Upload some media under **Media**, then create a playlist under **Playlists** and add items to it.
 3. On the screen you want to use, open **http://&lt;server&gt;:8080/player/**. It shows a pairing code.
 4. In the dashboard, go to **Screens → Pair screen**, type the code, name the screen and pick the playlist.
@@ -85,7 +100,16 @@ See [docs/architecture.md](docs/architecture.md) for how the pieces fit together
 
 ## Development
 
-Needs Node.js 22.13 or newer, which has SQLite built in.
+To build and run from source instead of the published image:
+
+```sh
+git clone https://github.com/elliottmarter/Sinewave.git sinewave
+cd sinewave
+cp .env.example .env        # then set ADMIN_PASSWORD
+docker compose up -d --build
+```
+
+To run the server without Docker, you need Node.js 22.13 or newer, which has SQLite built in.
 
 ```sh
 cd server && npm install
