@@ -58,6 +58,10 @@ function serializeScreen(s) {
     lastIp: s.last_ip,
     userAgent: s.user_agent,
     nowPlaying: s.now_playing,
+    // What the screen is showing right now, for the dashboard preview. null when idle or unknown.
+    nowPlayingMedia: s.np_id
+      ? { id: s.np_id, name: s.np_name, kind: s.np_kind, url: mediaUrl({ id: s.np_id, kind: s.np_kind, filename: s.np_filename, url: s.np_url }) }
+      : null,
     playerVersion: s.player_version,
     createdAt: s.created_at,
   };
@@ -255,7 +259,11 @@ admin.delete('/playlists/:id', async (req, res) => {
 
 // ---------- Screens ----------
 
-const SCREEN_SELECT = `SELECT s.*, p.name AS playlist_name FROM screens s LEFT JOIN playlists p ON p.id = s.playlist_id`;
+const SCREEN_SELECT = `SELECT s.*, p.name AS playlist_name,
+       np.id AS np_id, np.name AS np_name, np.kind AS np_kind, np.filename AS np_filename, np.url AS np_url
+  FROM screens s
+  LEFT JOIN playlists p ON p.id = s.playlist_id
+  LEFT JOIN media np ON np.id = s.now_playing_media_id`;
 
 admin.get('/screens', async (_req, res) => {
   const { rows } = await query(`${SCREEN_SELECT} ORDER BY s.name`);

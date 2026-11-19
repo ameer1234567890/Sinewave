@@ -186,3 +186,34 @@ dialog .dlg-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 
   background: var(--surface-2); color: var(--muted);
 }
 .role-badge.super { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
+
+/* ---------- screen cards ---------- */
+.screen-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 18px; }
+.screen-card { overflow: hidden; display: flex; flex-direction: column; }
+.screen-preview {
+  position: relative; aspect-ratio: 16 / 9; background: #000; overflow: hidden;
+  border-bottom: 1px solid var(--border);
+}
+.preview-content { position: absolute; inset: 0; }
+.preview-content img, .preview-content video { width: 100%; height: 100%; object-fit: contain; display: block; }
+/* Web pages render at 4x the card size and are scaled down, so they lay out like on a real screen. */
+.preview-content iframe {
+  position: absolute; top: 0; left: 0; width: 400%; height: 400%; border: 0; background: #fff;
+  transform-origin: 0 0; transform: scale(0.25); pointer-events: none;
+}
+.preview-empty {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  background: var(--surface-2); color: var(--muted); font-size: 13px;
+}
+.screen-card.offline .preview-content { filter: grayscale(1) brightness(0.55); }
+.live-badge { position: absolute; top: 10px; right: 10px; display: inline-flex; align-items: center; gap: 5px; }
+.live-badge.on::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: #ff4d4d; }
+.screen-body { padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 12px; flex: 1; }
+.screen-title { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+.screen-name-wrap { min-width: 0; }
+.screen-name { font-size: 16px; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.screen-meta { display: flex; flex-direction: column; gap: 2px; }
+.screen-now { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
+.screen-playlist { font-weight: 500; gap: 4px; }
+.screen-body .actions { margin-top: auto; }
+@media (max-width: 860px) { .screen-grid { grid-template-columns: 1fr; } }

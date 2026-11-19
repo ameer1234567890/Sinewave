@@ -12,7 +12,7 @@
 (() => {
   'use strict';
 
-  const PLAYER_VERSION = '0.1.0';
+  const PLAYER_VERSION = '0.2.0';
   const MEDIA_CACHE = 'sinewave-media-v1';
   const POLL_CONNECTED_MS = 5 * 60_000; // safety net while the socket is up
   const POLL_DISCONNECTED_MS = 30_000; // fallback while the socket is down
@@ -39,6 +39,7 @@
     index: -1,
     activeLayer: 0,
     nowPlaying: null,
+    nowPlayingMediaId: null,
     lastSync: null,
     lastError: null,
     online: navigator.onLine,
@@ -249,7 +250,7 @@
   function reportStatus() {
     renderDebug();
     if (state.ws?.readyState === WebSocket.OPEN) {
-      state.ws.send(JSON.stringify({ type: 'status', nowPlaying: state.nowPlaying, playerVersion: PLAYER_VERSION }));
+      state.ws.send(JSON.stringify({ type: 'status', nowPlaying: state.nowPlaying, nowPlayingMediaId: state.nowPlayingMediaId, playerVersion: PLAYER_VERSION }));
     }
   }
 
@@ -280,6 +281,7 @@
       state.index = (state.index + 1) % items.length;
       const item = items[state.index];
       state.nowPlaying = item.name;
+      state.nowPlayingMediaId = item.mediaId;
       reportStatus();
       try {
         await playItem(item, token);
@@ -295,6 +297,7 @@
   function showIdle() {
     for (const layer of layers) layer.classList.remove('visible');
     state.nowPlaying = null;
+    state.nowPlayingMediaId = null;
     $('idle-name').textContent = state.manifest?.screen?.name || '';
     $('idle-message').textContent = state.manifest?.playlist
       ? 'The assigned playlist is empty.'

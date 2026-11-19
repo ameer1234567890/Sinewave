@@ -206,26 +206,101 @@ async function startApp(user) {
 
 // ---------- screens ----------
 
+/**
+ * The live preview for a screen card: whatever the screen reported it is showing right now.
+ * Videos play muted in the card and web pages load scaled down, so it looks like the real screen.
+ */
+function screenPreview(s) {
+  const m = s.nowPlayingMedia;
+  if (!m) {
+    const msg = !s.playlistId ? 'No playlist assigned' : s.nowPlaying === null && s.online ? 'Playlist is empty' : 'Nothing playing';
+    return `<div class="preview-empty"><span>${esc(msg)}</span></div>`;
+  }
+  if (m.kind === 'image') return `<img src="${esc(m.url)}" alt="">`;
+  if (m.kind === 'video') return `<video src="${esc(m.url)}" muted autoplay loop playsinline preload="auto"></video>`;
+  // A dashboard shown inside a preview would preview itself forever; stop at one level.
+  if (window.top !== window) return `<div class="preview-empty"><span>🌐 ${esc(m.name)}</span></div>`;
+  return `<iframe src="${esc(m.url)}" tabindex="-1" loading="lazy" sandbox="allow-scripts allow-same-origin" referrerpolicy="no-referrer" allow="autoplay 'none'" title="${esc(m.name)}"></iframe>`;
+}
+
+/** Key that changes only when the preview content changes, so we don't restart videos every poll. */
+const previewKey = (s) => (s.nowPlayingMedia ? `${s.nowPlayingMedia.id}|${s.nowPlayingMedia.url}` : `none|${!!s.playlistId}|${s.online}`);
+
+function screenCard(s) {
+  const el = document.createElement('article');
+  el.className = 'card screen-card';
+  el.dataset.id = s.id;
+  el.innerHTML = `
+    <div class="screen-preview"><div class="preview-content"></div><span class="badge live-badge"></span></div>
+    <div class="screen-body">
+      <div class="screen-title">
+        <div class="screen-name-wrap"><strong class="screen-name"></strong><div class="muted screen-ip"></div></div>
+        <span class="status"><span class="dot"></span><span class="status-text"></span></span>
+      </div>
+      <div class="screen-meta">
+        <div class="muted screen-conn"></div>
+        <div class="screen-now"><span class="muted">Now playing</span> <span class="now-name"></span></div>
+      </div>
+      <label class="screen-playlist"><span class="muted">Playlist</span><select data-act="playlist"></select></label>
+      <div class="actions">
+        <button class="btn small" data-act="refresh" title="Re-sync content now">Refresh</button>
+        <button class="btn small" data-act="reload" title="Restart the player page">Reload</button>
+        <button class="btn small" data-act="rename">Rename</button>
+        ${isSuper() ? '<button class="btn small danger" data-act="delete">Remove</button>' : ''}
+      </div>
+    </div>`;
+  return el;
+}
+
+function updateScreenCard(el, s, playlists) {
+  el.classList.toggle('offline', !s.online);
+  el.querySelector('.screen-name').textContent = s.name;
+  el.querySelector('.screen-ip').textContent = s.lastIp || '';
+  el.querySelector('.dot').classList.toggle('on', s.online);
+  el.querySelector('.status-text').textContent = s.online ? 'Online' : 'Offline';
+  el.querySelector('.screen-conn').textContent = s.online
+    ? s.connected
+      ? 'Live connection'
+      : 'Polling'
+    : `Last seen ${timeAgo(s.lastSeenAt)}`;
+  el.querySelector('.now-name').textContent = s.nowPlaying || '—';
+  const badge = el.querySelector('.live-badge');
+  badge.textContent = s.online ? 'Live' : 'Last seen';
+  badge.classList.toggle('on', s.online);
+  for (const act of ['refresh', 'reload']) el.querySelector(`[data-act=${act}]`).disabled = !s.connected;
+
+  const key = previewKey(s);
+  if (el.dataset.preview !== key) {
+    el.dataset.preview = key;
+    el.querySelector('.preview-content').innerHTML = screenPreview(s);
+  }
+
+  const select = el.querySelector('select');
+  if (document.activeElement !== select) {
+    select.innerHTML =
+      `<option value="">No playlist</option>` +
+      playlists.map((p) => `<option value="${p.id}" ${p.id === s.playlistId ? 'selected' : ''}>${esc(p.name)}</option>`).join('');
+  }
+}
+
 async function screensPage() {
   view.innerHTML = `
     <div class="page-head">
       <div><h1>Screens</h1><div class="sub" id="screen-summary">&nbsp;</div></div>
       <div class="actions">${isSuper() ? '<button class="btn primary" id="pair">+ Pair screen</button>' : ''}</div>
     </div>
-    <div class="card table-wrap" id="screens"></div>`;
+    <div id="screens"></div>`;
   if (isSuper()) document.getElementById('pair').onclick = pairScreen;
 
   const render = async () => {
     const [screens, playlists] = await Promise.all([api('/screens'), api('/playlists')]);
     const online = screens.filter((s) => s.online).length;
-    document.getElementById('screen-summary').textContent = screens.length
-      ? `${online} of ${screens.length} online`
-      : 'No screens yet';
+    const summary = document.getElementById('screen-summary');
+    if (!summary) return;
+    summary.textContent = screens.length ? `${online} of ${screens.length} online` : 'No screens yet';
     const box = document.getElementById('screens');
-    if (!box) return;
-    // Don't clobber a dropdown the user is using.
-    if (box.contains(document.activeElement) && document.activeElement.tagName === 'SELECT') return;
     if (!screens.length) {
+      box.className = 'card';
       box.innerHTML = isSuper()
         ? `<div class="empty"><strong>No screens paired yet</strong>
         Open <a href="/player/" target="_blank" rel="noopener">/player/</a> on the display (in Chrome, ideally in kiosk mode),
@@ -233,32 +308,25 @@ async function screensPage() {
         : `<div class="empty"><strong>No screens paired yet</strong>Ask a super admin to pair a screen.</div>`;
       return;
     }
-    const options = (selected) =>
-      `<option value="">No playlist</option>` +
-      playlists.map((p) => `<option value="${p.id}" ${p.id === selected ? 'selected' : ''}>${esc(p.name)}</option>`).join('');
-    box.innerHTML = `<table>
-      <thead><tr><th>Screen</th><th>Status</th><th>Playlist</th><th>Now playing</th><th></th></tr></thead>
-      <tbody>${screens
-        .map(
-          (s) => `<tr data-id="${s.id}">
-          <td><strong>${esc(s.name)}</strong><div class="muted">${esc(s.lastIp || '')}</div></td>
-          <td><span class="status"><span class="dot ${s.online ? 'on' : ''}"></span>${s.online ? 'Online' : 'Offline'}</span>
-            <div class="muted">${s.online ? (s.connected ? 'Live connection' : 'Polling') : `Last seen ${timeAgo(s.lastSeenAt)}`}</div></td>
-          <td><select data-act="playlist">${options(s.playlistId)}</select></td>
-          <td class="muted">${esc(s.nowPlaying || '—')}</td>
-          <td><div class="actions">
-            <button class="btn small" data-act="refresh" ${s.connected ? '' : 'disabled'} title="Re-sync content now">Refresh</button>
-            <button class="btn small" data-act="reload" ${s.connected ? '' : 'disabled'} title="Restart the player page">Reload</button>
-            <button class="btn small" data-act="rename">Rename</button>
-            ${isSuper() ? '<button class="btn small danger" data-act="delete">Remove</button>' : ''}
-          </div></td></tr>`,
-        )
-        .join('')}</tbody></table>`;
+    if (box.className !== 'screen-grid') {
+      box.className = 'screen-grid';
+      box.innerHTML = '';
+    }
+    // Update cards in place so previews (videos, web pages) keep playing between refreshes.
+    const existing = new Map([...box.children].map((el) => [el.dataset.id, el]));
+    screens.forEach((s, i) => {
+      let el = existing.get(s.id);
+      existing.delete(s.id);
+      if (!el) el = screenCard(s);
+      if (box.children[i] !== el) box.insertBefore(el, box.children[i] || null);
+      updateScreenCard(el, s, playlists);
+    });
+    for (const el of existing.values()) el.remove();
   };
 
   document.getElementById('screens').addEventListener('change', async (e) => {
     if (e.target.dataset.act !== 'playlist') return;
-    const id = e.target.closest('tr').dataset.id;
+    const id = e.target.closest('.screen-card').dataset.id;
     try {
       await api(`/screens/${id}`, { method: 'PATCH', body: { playlistId: e.target.value || null } });
       toast('Playlist assigned. The screen updates right away.');
@@ -272,9 +340,9 @@ async function screensPage() {
   document.getElementById('screens').addEventListener('click', async (e) => {
     const btn = e.target.closest('button[data-act]');
     if (!btn) return;
-    const row = btn.closest('tr');
-    const id = row.dataset.id;
-    const name = row.querySelector('strong').textContent;
+    const card = btn.closest('.screen-card');
+    const id = card.dataset.id;
+    const name = card.querySelector('.screen-name').textContent;
     try {
       if (btn.dataset.act === 'refresh' || btn.dataset.act === 'reload') {
         await api(`/screens/${id}/commands`, { method: 'POST', body: { command: btn.dataset.act } });
@@ -298,7 +366,8 @@ async function screensPage() {
   });
 
   await render();
-  refreshTimer = setInterval(() => render().catch(() => {}), 5000);
+  // Poll often so the preview follows the screen closely.
+  refreshTimer = setInterval(() => render().catch(() => {}), 3000);
 }
 
 async function pairScreen() {
