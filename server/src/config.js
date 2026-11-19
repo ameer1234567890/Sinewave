@@ -2,11 +2,14 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
+const dataDir = process.env.DATA_DIR || path.resolve(here, '../../data');
 
 export const config = {
   port: Number(process.env.PORT || 8080),
-  databaseUrl: process.env.DATABASE_URL || 'postgres://signage:signage@localhost:5432/signage',
-  mediaDir: process.env.MEDIA_DIR || path.resolve(here, '../../data/media'),
+  // Everything Sinewave stores (the SQLite database and uploaded media) lives under one folder.
+  dataDir,
+  databasePath: process.env.DATABASE_PATH || path.join(dataDir, 'sinewave.db'),
+  mediaDir: process.env.MEDIA_DIR || path.join(dataDir, 'media'),
   playerDir: process.env.PLAYER_DIR || path.resolve(here, '../../player'),
   publicDir: path.resolve(here, '../public'),
   migrationsDir: path.resolve(here, '../migrations'),

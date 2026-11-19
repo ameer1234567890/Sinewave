@@ -5,7 +5,7 @@ import crypto from 'node:crypto';
 import express from 'express';
 import multer from 'multer';
 import { config } from '../config.js';
-import { query, withTransaction } from '../db.js';
+import { isForeignKeyError, query, withTransaction } from '../db.js';
 import { hub } from '../hub.js';
 import { mediaUrl } from '../manifest.js';
 import { HttpError, isUuid, normalizeCode, randomToken, sha256, uuid } from '../util.js';
@@ -220,23 +220,25 @@ admin.put('/playlists/:id', async (req, res) => {
       throw new HttpError(400, 'durationSeconds must be a whole number of seconds between 1 and 86400');
     }
   }
-  await withTransaction(async (client) => {
-    const { rowCount } = await client.query('UPDATE playlists SET name = $2, updated_at = now() WHERE id = $1', [
-      id,
-      cleanName(req.body?.name, 'Untitled playlist'),
-    ]);
-    if (!rowCount) throw new HttpError(404, 'Playlist not found');
-    await client.query('DELETE FROM playlist_items WHERE playlist_id = $1', [id]);
-    for (const [position, item] of items.entries()) {
-      await client.query(
-        'INSERT INTO playlist_items (id, playlist_id, media_id, position, duration_seconds) VALUES ($1, $2, $3, $4, $5)',
-        [uuid(), id, item.mediaId, position, item.durationSeconds ?? null],
-      );
-    }
-  }).catch((err) => {
-    if (err.code === '23503') throw new HttpError(400, 'One of the media items no longer exists');
+  try {
+    withTransaction((client) => {
+      const { rowCount } = client.query('UPDATE playlists SET name = $2, updated_at = now() WHERE id = $1', [
+        id,
+        cleanName(req.body?.name, 'Untitled playlist'),
+      ]);
+      if (!rowCount) throw new HttpError(404, 'Playlist not found');
+      client.query('DELETE FROM playlist_items WHERE playlist_id = $1', [id]);
+      for (const [position, item] of items.entries()) {
+        client.query(
+          'INSERT INTO playlist_items (id, playlist_id, media_id, position, duration_seconds) VALUES ($1, $2, $3, $4, $5)',
+          [uuid(), id, item.mediaId, position, item.durationSeconds ?? null],
+        );
+      }
+    });
+  } catch (err) {
+    if (isForeignKeyError(err)) throw new HttpError(400, 'One of the media items no longer exists');
     throw err;
-  });
+  }
   await hub.notifyPlaylist(id);
   res.json(await loadPlaylist(id));
 });
@@ -272,23 +274,23 @@ admin.post('/screens/pair', async (req, res) => {
   const code = normalizeCode(req.body?.code);
   if (code.length !== 6) throw new HttpError(400, 'Pairing codes are 6 characters');
   const playlistId = await validPlaylistId(req.body?.playlistId);
-  const screenId = await withTransaction(async (client) => {
-    const { rows } = await client.query(
+  const screenId = withTransaction((client) => {
+    const { rows } = client.query(
       `SELECT id FROM pairing_requests
         WHERE code = $1 AND screen_id IS NULL AND expires_at > now()
-        ORDER BY created_at DESC LIMIT 1 FOR UPDATE`,
+        ORDER BY created_at DESC LIMIT 1`,
       [code],
     );
     if (!rows.length) throw new HttpError(404, 'No screen is showing that code. Check it, or reload the player to get a new one.');
     const id = uuid();
     const token = randomToken();
-    await client.query('INSERT INTO screens (id, name, token_hash, playlist_id) VALUES ($1, $2, $3, $4)', [
+    client.query('INSERT INTO screens (id, name, token_hash, playlist_id) VALUES ($1, $2, $3, $4)', [
       id,
       cleanName(req.body?.name, `Screen ${code}`),
       sha256(token),
       playlistId,
     ]);
-    await client.query('UPDATE pairing_requests SET screen_id = $2, device_token = $3 WHERE id = $1', [rows[0].id, id, token]);
+    client.query('UPDATE pairing_requests SET screen_id = $2, device_token = $3 WHERE id = $1', [rows[0].id, id, token]);
     return id;
   });
   const { rows } = await query(`${SCREEN_SELECT} WHERE s.id = $1`, [screenId]);

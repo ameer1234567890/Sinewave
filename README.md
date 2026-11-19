@@ -29,12 +29,12 @@ Sinewave aims to make it simple to run digital signage on ordinary hardware: bui
 
 ## Quick start
 
-You need Docker with Compose.
+You need Docker with Compose. Sinewave is a single container with no separate database to run.
 
 ```sh
 git clone https://github.com/elliottmarter/Sinewave.git sinewave
 cd sinewave
-cp .env.example .env        # then set ADMIN_PASSWORD and POSTGRES_PASSWORD
+cp .env.example .env        # then set ADMIN_PASSWORD
 docker compose up -d --build
 ```
 
@@ -65,18 +65,17 @@ Browsers only allow service workers, and so offline caching, on **HTTPS** or **l
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `ADMIN_PASSWORD` | `admin` | Dashboard password. Change it. |
-| `POSTGRES_PASSWORD` | `signage` | Database password. |
 | `PORT` | `8080` | Port published on the host. |
 | `MAX_UPLOAD_MB` | `1024` | Largest file you can upload. |
 | `SECURE_COOKIES` | `false` | Mark the session cookie `Secure` (set when using HTTPS). |
 | `TRUST_PROXY` | `false` | Trust `X-Forwarded-*` headers from a reverse proxy. |
 
-Media files live in the `media` Docker volume and the database in `pgdata`.
+Sinewave runs as a single container. Everything it stores, the SQLite database (`sinewave.db`) and uploaded media, lives in the `data` volume mounted at `/data`, so backing up that one volume backs up everything. Outside Docker, set `DATA_DIR` to choose the folder.
 
 ## Project layout
 
 ```
-server/     Node.js CMS: REST API, WebSocket hub, Postgres migrations, dashboard (server/public)
+server/     Node.js CMS: REST API, WebSocket hub, SQLite migrations, dashboard (server/public)
 player/     The web player: plain HTML/JS plus a service worker, served at /player/
 e2e/        End-to-end test that drives the dashboard and a headless player with Playwright
 docs/       Architecture notes and screenshots
@@ -86,13 +85,12 @@ See [docs/architecture.md](docs/architecture.md) for how the pieces fit together
 
 ## Development
 
-```sh
-docker compose up -d db                       # just Postgres
-cd server && npm install
-DATABASE_URL=postgres://signage:signage@localhost:5432/signage npm run dev
-```
+Needs Node.js 22.13 or newer, which has SQLite built in.
 
-The compose file doesn't publish the database port, so for local development either add `ports: ["5432:5432"]` to the `db` service or run your own Postgres.
+```sh
+cd server && npm install
+npm run dev                 # data goes in ./data unless DATA_DIR is set
+```
 
 ### End-to-end test
 

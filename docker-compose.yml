@@ -1,41 +1,22 @@
-# Run the whole stack:  docker compose up -d
+# Run Sinewave:  docker compose up -d
 # Then open http://localhost:8080 (dashboard) and http://localhost:8080/player/ (player).
+# Everything is stored in the "data" volume: the SQLite database (sinewave.db) and uploaded media.
 name: sinewave
 
 services:
-  server:
+  sinewave:
     build: .
-    image: sinewave-server:latest
+    image: sinewave:latest
     restart: unless-stopped
-    depends_on:
-      db:
-        condition: service_healthy
     ports:
       - "${PORT:-8080}:8080"
     environment:
-      DATABASE_URL: postgres://signage:${POSTGRES_PASSWORD:-signage}@db:5432/signage
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin}
       MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-1024}
       SECURE_COOKIES: ${SECURE_COOKIES:-false}
       TRUST_PROXY: ${TRUST_PROXY:-false}
     volumes:
-      - media:/data/media
-
-  db:
-    image: postgres:16-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: signage
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-signage}
-      POSTGRES_DB: signage
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U signage -d signage"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
+      - data:/data
 
 volumes:
-  media:
-  pgdata:
+  data:

@@ -10,7 +10,7 @@ export const player = express.Router();
 /** A new, unpaired player asks for a code to show on screen. */
 player.post('/pairing', async (_req, res) => {
   // Drop stale requests so codes can be reused.
-  await query("DELETE FROM pairing_requests WHERE expires_at < now() - interval '1 day'");
+  await query('DELETE FROM pairing_requests WHERE expires_at < $1', [new Date(Date.now() - 86400_000)]);
   let code;
   for (let i = 0; i < 10; i++) {
     code = pairingCode();
