@@ -172,7 +172,7 @@ const visibleKind = (player) =>
     await dash.fill('dialog input[name=name]', `Reception ${RUN}`);
     await dash.selectOption('dialog select[name=playlistId]', { label: plName });
     await dash.click('dialog button.primary');
-    await dash.waitForSelector(`td:has-text("Reception ${RUN}")`);
+    await dash.waitForSelector(`.screen-card:has-text("Reception ${RUN}")`);
 
     log('Player picks up its token and starts playing');
     await waitFor(async () => (await playing(player)) === 'welcome', { what: 'welcome slide', timeout: 20000 });
@@ -198,8 +198,21 @@ const visibleKind = (player) =>
 
     log('Dashboard shows the screen online with a live connection and what it is playing');
     await dash.reload();
-    let row = dash.locator(`tr:has-text("Reception ${RUN}")`);
+    let row = dash.locator(`.screen-card:has-text("Reception ${RUN}")`);
     await waitFor(async () => (await row.textContent()).includes('Live connection'), { what: 'online status' });
+    log('Screen card previews what the screen is showing right now');
+    await waitFor(
+      async () => {
+        const src = await row.locator('.preview-content img, .preview-content video').first().getAttribute('src').catch(() => null);
+        const now = await playing(player);
+        const item = await player.evaluate(() => {
+          const st = window.sinewavePlayer.state;
+          return st.manifest.playlist.items.find((i) => i.mediaId === st.nowPlayingMediaId)?.url;
+        });
+        return src && item && src === item && now;
+      },
+      { what: 'card preview matches the screen', timeout: 15000 },
+    );
     await shot(dash, '07-dashboard-screens-online');
 
     // --- Live push: change the playlist and see it on screen without a reload
@@ -308,19 +321,19 @@ const visibleKind = (player) =>
     await std.fill('input[name=username]', stdName);
     await std.fill('input[name=password]', 'staff-pass-1');
     await std.click('button[type=submit]');
-    await std.waitForSelector(`td:has-text("Reception ${RUN}")`);
+    await std.waitForSelector(`.screen-card:has-text("Reception ${RUN}")`);
     assert.equal(await std.locator('#pair').count(), 0, 'no Pair button');
     assert.equal(await std.locator('[data-act=delete]').count(), 0, 'no Remove button');
     assert.ok(await std.locator('a[data-nav=users]').isHidden(), 'no Users link');
-    await std.locator(`tr:has-text("Reception ${RUN}") [data-act=rename]`).click();
+    await std.locator(`.screen-card:has-text("Reception ${RUN}") [data-act=rename]`).click();
     await std.fill('dialog input[name=name]', `Front desk ${RUN}`);
     await std.click('dialog button.primary');
-    await std.waitForSelector(`td:has-text("Front desk ${RUN}")`);
+    await std.waitForSelector(`.screen-card:has-text("Front desk ${RUN}")`);
     await shot(std, '11-dashboard-standard-user');
 
     log('Server refuses pairing, removing screens and managing users for a standard user');
     const stdApi = std.request;
-    const screenId = await std.locator(`tr:has-text("Front desk ${RUN}")`).getAttribute('data-id');
+    const screenId = await std.locator(`.screen-card:has-text("Front desk ${RUN}")`).getAttribute('data-id');
     assert.equal((await stdApi.post(`${BASE}/api/screens/pair`, { data: { code: 'ABC123' } })).status(), 403);
     assert.equal((await stdApi.delete(`${BASE}/api/screens/${screenId}`)).status(), 403);
     assert.equal((await stdApi.get(`${BASE}/api/users`)).status(), 403);
@@ -332,8 +345,8 @@ const visibleKind = (player) =>
     await dash.click('dialog button.primary');
     await waitFor(async () => (await dash.locator(`tr[data-name="${stdName}"]`).count()) === 0, { what: 'user deleted' });
     await dash.click('a[data-nav=screens]');
-    await dash.waitForSelector(`td:has-text("Front desk ${RUN}")`);
-    row = dash.locator(`tr[data-id="${screenId}"]`);
+    await dash.waitForSelector(`.screen-card:has-text("Front desk ${RUN}")`);
+    row = dash.locator(`.screen-card[data-id="${screenId}"]`);
 
     log('Removing the screen sends the player back to pairing');
     await row.locator('[data-act=delete]').click();
