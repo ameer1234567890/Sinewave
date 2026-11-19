@@ -58,11 +58,15 @@ class Hub {
         return;
       }
       if (msg.type === 'status') {
-        query('UPDATE screens SET now_playing = $2, player_version = $3, last_seen_at = now() WHERE id = $1', [
-          id,
-          typeof msg.nowPlaying === 'string' ? msg.nowPlaying.slice(0, 200) : null,
-          typeof msg.playerVersion === 'string' ? msg.playerVersion.slice(0, 50) : null,
-        ]).catch(() => {});
+        try {
+          query('UPDATE screens SET now_playing = $2, player_version = $3, last_seen_at = now() WHERE id = $1', [
+            id,
+            typeof msg.nowPlaying === 'string' ? msg.nowPlaying.slice(0, 200) : null,
+            typeof msg.playerVersion === 'string' ? msg.playerVersion.slice(0, 50) : null,
+          ]);
+        } catch (err) {
+          console.error('Could not save screen status', err.message);
+        }
       }
     });
     ws.on('close', () => {

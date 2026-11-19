@@ -3,26 +3,32 @@
 Sinewave has two parts: a **server** that you host once, and a **player** that runs on every screen.
 
 ```
- ┌──────────────── docker compose ────────────────┐
- │                                                │
- │  server (Node.js)                  Postgres    │
- │  ├─ dashboard  /              ◄──► screens,    │
- │  ├─ REST API   /api/...            playlists,  │
- │  ├─ WebSocket  /ws/player          media       │
- │  ├─ files      /media/<id>/...                 │
- │  └─ player     /player/        media volume    │
- └──────────▲──────────────────────────▲──────────┘
-            │ HTTP + WebSocket         │ HTTP
-   ┌────────┴────────┐        ┌────────┴────────┐
-   │ player (screen) │  ...   │ browser (admin) │
-   │ service worker  │        │ dashboard       │
-   │ + media cache   │        └─────────────────┘
+ ┌──────────── sinewave container ─────────────┐
+ │                                             │
+ │  Node.js process                            │
+ │  ├─ dashboard  /                            │
+ │  ├─ REST API   /api/...                     │
+ │  ├─ WebSocket  /ws/player                   │
+ │  ├─ files      /media/<id>/...              │
+ │  └─ player     /player/                     │
+ │                                             │
+ │  /data volume                               │
+ │  ├─ sinewave.db   (SQLite)                  │
+ │  └─ media/        (uploaded files)          │
+ └──────────▲─────────────────────▲────────────┘
+            │ HTTP + WebSocket    │ HTTP
+   ┌────────┴────────┐   ┌────────┴────────┐
+   │ player (screen) │   │ browser (admin) │
+   │ service worker  │   │ dashboard       │
+   │ + media cache   │   └─────────────────┘
    └─────────────────┘
 ```
 
 ## Server
 
-`server/` is a single Node.js process (Express + `ws` + `pg`). It runs migrations from `server/migrations/` at startup, so `docker compose up` is all the setup there is.
+`server/` is a single Node.js process (Express and `ws`) that stores everything in SQLite through Node's built-in `node:sqlite` module, so there are no native dependencies and no separate database to run. The database runs in WAL mode with foreign keys on. Migrations in `server/migrations/` run at startup, so `docker compose up` is all the setup there is.
+
+SQLite comfortably handles the write load of hundreds of screens (heartbeats, status updates and edits). If a deployment ever outgrows it, the queries are kept to plain SQL behind `db.js` so a Postgres backend can be added.
 
 | Table | What it holds |
 | --- | --- |
@@ -32,7 +38,7 @@ Sinewave has two parts: a **server** that you host once, and a **player** that r
 | `pairing_requests` | Short-lived codes shown by unpaired players. |
 | `settings` | Server-wide values, such as the session signing secret. |
 
-Uploaded files are stored at `MEDIA_DIR/<media id>/<file name>`. A file never changes once uploaded, so `/media/...` is served with a one-year immutable cache header, and players can cache it by URL.
+Uploaded files are stored at `DATA_DIR/media/<media id>/<file name>`. A file never changes once uploaded, so `/media/...` is served with a one-year immutable cache header, and players can cache it by URL.
 
 ### Authentication
 

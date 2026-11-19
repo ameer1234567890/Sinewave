@@ -2,15 +2,14 @@ import http from 'node:http';
 import fs from 'node:fs';
 import express from 'express';
 import { config } from './config.js';
-import { migrate, pool, waitForDatabase } from './db.js';
+import { closeDatabase, migrate, query } from './db.js';
 import { initAuth, login, logout, requireAdmin, sessionStatus } from './auth.js';
 import { hub } from './hub.js';
 import { admin } from './routes/admin.js';
 import { player } from './routes/player.js';
 import { HttpError } from './util.js';
 
-await waitForDatabase();
-await migrate();
+migrate();
 await initAuth();
 fs.mkdirSync(config.mediaDir, { recursive: true });
 
@@ -19,8 +18,8 @@ app.disable('x-powered-by');
 app.set('trust proxy', process.env.TRUST_PROXY === 'true');
 app.use(express.json({ limit: '1mb' }));
 
-app.get('/healthz', async (_req, res) => {
-  await pool.query('SELECT 1');
+app.get('/healthz', (_req, res) => {
+  query('SELECT 1');
   res.json({ ok: true });
 });
 
@@ -67,7 +66,10 @@ server.listen(config.port, () => console.log(`Sinewave server listening on :${co
 function shutdown() {
   console.log('Shutting down');
   hub.close();
-  server.close(() => pool.end().then(() => process.exit(0)));
+  server.close(() => {
+    closeDatabase();
+    process.exit(0);
+  });
   setTimeout(() => process.exit(0), 5000).unref();
 }
 process.on('SIGTERM', shutdown);

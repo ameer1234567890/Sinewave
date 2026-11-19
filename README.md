@@ -29,16 +29,31 @@ Sinewave aims to make it simple to run digital signage on ordinary hardware: bui
 
 ## Quick start
 
-You need Docker with Compose.
+You need Docker with Compose. Sinewave is a single container with no separate database to run. Save this as `docker-compose.yml`, change the password, and run `docker compose up -d`:
 
-```sh
-git clone https://github.com/elliottmarter/Sinewave.git sinewave
-cd sinewave
-cp .env.example .env        # then set ADMIN_PASSWORD and POSTGRES_PASSWORD
-docker compose up -d --build
+```yaml
+services:
+  sinewave:
+    image: ghcr.io/elliottmarter/sinewave:latest
+    container_name: sinewave
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      ADMIN_PASSWORD: change-me      # dashboard password
+      # SECURE_COOKIES: "true"       # set both when serving over HTTPS behind a reverse proxy
+      # TRUST_PROXY: "true"
+      # MAX_UPLOAD_MB: "1024"
+    volumes:
+      - sinewave-data:/data          # SQLite database and uploaded media
+
+volumes:
+  sinewave-data:
 ```
 
-1. Open **http://localhost:8080** and sign in with your `ADMIN_PASSWORD` (it defaults to `admin` if you skip `.env`).
+The image is built for `amd64` and `arm64`, so it also runs on a Raspberry Pi 4 or 5.
+
+1. Open **http://localhost:8080** and sign in with your `ADMIN_PASSWORD`.
 2. Upload some media under **Media**, then create a playlist under **Playlists** and add items to it.
 3. On the screen you want to use, open **http://&lt;server&gt;:8080/player/**. It shows a pairing code.
 4. In the dashboard, go to **Screens → Pair screen**, type the code, name the screen and pick the playlist.
@@ -65,18 +80,17 @@ Browsers only allow service workers, and so offline caching, on **HTTPS** or **l
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `ADMIN_PASSWORD` | `admin` | Dashboard password. Change it. |
-| `POSTGRES_PASSWORD` | `signage` | Database password. |
 | `PORT` | `8080` | Port published on the host. |
 | `MAX_UPLOAD_MB` | `1024` | Largest file you can upload. |
 | `SECURE_COOKIES` | `false` | Mark the session cookie `Secure` (set when using HTTPS). |
 | `TRUST_PROXY` | `false` | Trust `X-Forwarded-*` headers from a reverse proxy. |
 
-Media files live in the `media` Docker volume and the database in `pgdata`.
+Sinewave runs as a single container. Everything it stores, the SQLite database (`sinewave.db`) and uploaded media, lives in the `data` volume mounted at `/data`, so backing up that one volume backs up everything. Outside Docker, set `DATA_DIR` to choose the folder.
 
 ## Project layout
 
 ```
-server/     Node.js CMS: REST API, WebSocket hub, Postgres migrations, dashboard (server/public)
+server/     Node.js CMS: REST API, WebSocket hub, SQLite migrations, dashboard (server/public)
 player/     The web player: plain HTML/JS plus a service worker, served at /player/
 e2e/        End-to-end test that drives the dashboard and a headless player with Playwright
 docs/       Architecture notes and screenshots
@@ -86,13 +100,21 @@ See [docs/architecture.md](docs/architecture.md) for how the pieces fit together
 
 ## Development
 
+To build and run from source instead of the published image:
+
 ```sh
-docker compose up -d db                       # just Postgres
-cd server && npm install
-DATABASE_URL=postgres://signage:signage@localhost:5432/signage npm run dev
+git clone https://github.com/elliottmarter/Sinewave.git sinewave
+cd sinewave
+cp .env.example .env        # then set ADMIN_PASSWORD
+docker compose up -d --build
 ```
 
-The compose file doesn't publish the database port, so for local development either add `ports: ["5432:5432"]` to the `db` service or run your own Postgres.
+To run the server without Docker, you need Node.js 22.13 or newer, which has SQLite built in.
+
+```sh
+cd server && npm install
+npm run dev                 # data goes in ./data unless DATA_DIR is set
+```
 
 ### End-to-end test
 
