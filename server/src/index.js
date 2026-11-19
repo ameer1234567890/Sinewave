@@ -4,9 +4,10 @@ import express from 'express';
 import { config } from './config.js';
 import { closeDatabase, migrate, query } from './db.js';
 import { seedDemo } from './seed.js';
-import { initAuth, login, logout, requireAdmin, sessionStatus } from './auth.js';
+import { initAuth, login, logout, requireUser, sessionStatus } from './auth.js';
 import { hub } from './hub.js';
 import { admin } from './routes/admin.js';
+import { users } from './routes/users.js';
 import { player } from './routes/player.js';
 import { HttpError } from './util.js';
 
@@ -30,7 +31,10 @@ app.post('/api/auth/login', login);
 app.post('/api/auth/logout', logout);
 app.get('/api/auth/session', sessionStatus);
 app.use('/api/player', player);
-app.use('/api', requireAdmin, admin);
+// Everything below needs a signed-in account. Super-admin-only routes check the role themselves.
+app.use('/api', requireUser);
+app.use('/api', users);
+app.use('/api', admin);
 app.use('/api', (_req, _res, next) => next(new HttpError(404, 'Not found')));
 
 // Uploaded files. Each lives in its own folder named after its id, and never changes, so it can be cached forever.

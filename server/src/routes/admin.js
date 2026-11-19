@@ -4,6 +4,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import express from 'express';
 import multer from 'multer';
+import { requireSuperAdmin } from '../auth.js';
 import { config } from '../config.js';
 import { isForeignKeyError, query, withTransaction } from '../db.js';
 import { hub } from '../hub.js';
@@ -270,7 +271,7 @@ async function validPlaylistId(v) {
 }
 
 /** Claim the pairing code a player is showing and create a screen for it. */
-admin.post('/screens/pair', async (req, res) => {
+admin.post('/screens/pair', requireSuperAdmin, async (req, res) => {
   const code = normalizeCode(req.body?.code);
   if (code.length !== 6) throw new HttpError(400, 'Pairing codes are 6 characters');
   const playlistId = await validPlaylistId(req.body?.playlistId);
@@ -317,7 +318,7 @@ admin.patch('/screens/:id', async (req, res) => {
   res.json(serializeScreen(rows[0]));
 });
 
-admin.delete('/screens/:id', async (req, res) => {
+admin.delete('/screens/:id', requireSuperAdmin, async (req, res) => {
   const id = param(req);
   const { rowCount } = await query('DELETE FROM screens WHERE id = $1', [id]);
   if (!rowCount) throw new HttpError(404, 'Screen not found');

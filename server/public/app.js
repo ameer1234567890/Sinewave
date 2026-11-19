@@ -3,6 +3,12 @@
 const view = document.getElementById('view');
 const dialog = document.getElementById('dialog');
 
+// The signed-in account. Standard users can't pair or remove screens, or manage users.
+// The server enforces this too; the dashboard just hides what you can't use.
+let me = null;
+const isSuper = () => me?.role === 'super_admin';
+const ROLE_NAMES = { super_admin: 'Super admin', standard: 'Standard' };
+
 // ---------- utilities ----------
 
 const esc = (s) =>
@@ -104,10 +110,13 @@ document.getElementById('login-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const err = document.getElementById('login-error');
   try {
-    await api('/auth/login', { method: 'POST', body: { password: e.target.password.value } });
+    const res = await api('/auth/login', {
+      method: 'POST',
+      body: { username: e.target.username.value, password: e.target.password.value },
+    });
     e.target.reset();
     err.hidden = true;
-    startApp();
+    startApp(res.user);
   } catch (ex) {
     err.textContent = ex.message;
     err.hidden = false;
@@ -118,6 +127,40 @@ document.getElementById('logout').addEventListener('click', async () => {
   await api('/auth/logout', { method: 'POST' }).catch(() => {});
   showLogin();
 });
+
+document.getElementById('change-password').addEventListener('click', async () => {
+  const res = await modal(
+    `<div class="dlg-body form"><h2>Change your password</h2>
+      <label>Current password <input type="password" name="currentPassword" required autocomplete="current-password"></label>
+      <label>New password <input type="password" name="newPassword" required minlength="8" autocomplete="new-password"></label>
+      <p class="muted" style="margin:0">At least 8 characters. You'll be signed out on your other devices.</p>
+      <p class="form-error" hidden></p></div>
+    <div class="dlg-foot"><button type="button" class="btn" data-cancel>Cancel</button><button class="btn primary">Change password</button></div>`,
+    { onOpen: submitInDialog((data) => api('/account/password', { method: 'POST', body: data })) },
+  );
+  if (res) toast('Password changed');
+});
+
+/** Dialog helper: run `action` on submit and keep the dialog open, showing the error, if it fails. */
+function submitInDialog(action) {
+  return (form, done) => {
+    form.addEventListener(
+      'submit',
+      async (e) => {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        try {
+          done((await action(Object.fromEntries(new FormData(form)))) ?? true);
+        } catch (err) {
+          const el = form.querySelector('.form-error');
+          el.textContent = err.message;
+          el.hidden = false;
+        }
+      },
+      { capture: true },
+    );
+  };
+}
 
 // ---------- routing ----------
 
@@ -132,6 +175,7 @@ const routes = [
   [/^#\/media$/, 'media', mediaPage],
   [/^#\/playlists$/, 'playlists', playlistsPage],
   [/^#\/playlists\/([0-9a-f-]+)$/, 'playlists', playlistEditor],
+  [/^#\/users$/, 'users', usersPage],
 ];
 
 async function route() {
@@ -149,7 +193,12 @@ async function route() {
 }
 window.addEventListener('hashchange', route);
 
-async function startApp() {
+async function startApp(user) {
+  me = user;
+  document.getElementById('me-name').textContent = me.username;
+  document.getElementById('me-role').textContent = ROLE_NAMES[me.role] || me.role;
+  document.querySelectorAll('[data-super]').forEach((el) => (el.hidden = !isSuper()));
+  if (!isSuper() && location.hash === '#/users') location.hash = '#/screens';
   document.getElementById('login').hidden = true;
   document.getElementById('app').hidden = false;
   await route();
@@ -161,10 +210,10 @@ async function screensPage() {
   view.innerHTML = `
     <div class="page-head">
       <div><h1>Screens</h1><div class="sub" id="screen-summary">&nbsp;</div></div>
-      <div class="actions"><button class="btn primary" id="pair">+ Pair screen</button></div>
+      <div class="actions">${isSuper() ? '<button class="btn primary" id="pair">+ Pair screen</button>' : ''}</div>
     </div>
     <div class="card table-wrap" id="screens"></div>`;
-  document.getElementById('pair').onclick = pairScreen;
+  if (isSuper()) document.getElementById('pair').onclick = pairScreen;
 
   const render = async () => {
     const [screens, playlists] = await Promise.all([api('/screens'), api('/playlists')]);
@@ -177,9 +226,11 @@ async function screensPage() {
     // Don't clobber a dropdown the user is using.
     if (box.contains(document.activeElement) && document.activeElement.tagName === 'SELECT') return;
     if (!screens.length) {
-      box.innerHTML = `<div class="empty"><strong>No screens paired yet</strong>
+      box.innerHTML = isSuper()
+        ? `<div class="empty"><strong>No screens paired yet</strong>
         Open <a href="/player/" target="_blank" rel="noopener">/player/</a> on the display (in Chrome, ideally in kiosk mode),
-        then choose <em>Pair screen</em> and type in the code it shows.</div>`;
+        then choose <em>Pair screen</em> and type in the code it shows.</div>`
+        : `<div class="empty"><strong>No screens paired yet</strong>Ask a super admin to pair a screen.</div>`;
       return;
     }
     const options = (selected) =>
@@ -199,7 +250,7 @@ async function screensPage() {
             <button class="btn small" data-act="refresh" ${s.connected ? '' : 'disabled'} title="Re-sync content now">Refresh</button>
             <button class="btn small" data-act="reload" ${s.connected ? '' : 'disabled'} title="Restart the player page">Reload</button>
             <button class="btn small" data-act="rename">Rename</button>
-            <button class="btn small danger" data-act="delete">Remove</button>
+            ${isSuper() ? '<button class="btn small danger" data-act="delete">Remove</button>' : ''}
           </div></td></tr>`,
         )
         .join('')}</tbody></table>`;
@@ -567,8 +618,96 @@ async function playlistEditor(id) {
   renderItems();
 }
 
+// ---------- users ----------
+
+async function usersPage() {
+  const users = await api('/users');
+  view.innerHTML = `
+    <div class="page-head">
+      <div><h1>Users</h1><div class="sub">Super admins can do everything. Standard users can edit screens, media and playlists, but can't pair or remove screens or manage users.</div></div>
+      <div class="actions"><button class="btn primary" id="add-user">+ Add user</button></div>
+    </div>
+    <div class="card table-wrap"><table>
+      <thead><tr><th>Username</th><th>Role</th><th>Last signed in</th><th></th></tr></thead>
+      <tbody>${users
+        .map(
+          (u) => `<tr data-id="${u.id}" data-name="${esc(u.username)}" data-role="${u.role}">
+          <td><strong>${esc(u.username)}</strong>${u.id === me.id ? ' <span class="muted">(you)</span>' : ''}</td>
+          <td><span class="role-badge ${u.role === 'super_admin' ? 'super' : ''}">${esc(ROLE_NAMES[u.role] || u.role)}</span></td>
+          <td class="muted">${u.lastLoginAt ? timeAgo(u.lastLoginAt) : 'never'}</td>
+          <td><div class="actions">
+            <button class="btn small" data-act="edit">Edit</button>
+            <button class="btn small" data-act="password">Set password</button>
+            ${u.id === me.id ? '' : '<button class="btn small danger" data-act="delete">Delete</button>'}
+          </div></td></tr>`,
+        )
+        .join('')}</tbody></table></div>`;
+
+  const roleSelect = (selected) =>
+    `<select name="role">${Object.entries(ROLE_NAMES)
+      .map(([v, label]) => `<option value="${v}" ${v === selected ? 'selected' : ''}>${label}</option>`)
+      .join('')}</select>`;
+
+  document.getElementById('add-user').onclick = async () => {
+    const res = await modal(
+      `<div class="dlg-body form"><h2>Add a user</h2>
+        <label>Username <input name="username" required maxlength="64" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="sam"></label>
+        <label>Password <input type="password" name="password" required minlength="8" autocomplete="new-password"></label>
+        <label>Role ${roleSelect('standard')}</label>
+        <p class="muted" style="margin:0">Share the password with them. They can change it after signing in.</p>
+        <p class="form-error" hidden></p></div>
+      <div class="dlg-foot"><button type="button" class="btn" data-cancel>Cancel</button><button class="btn primary">Add user</button></div>`,
+      { onOpen: submitInDialog((data) => api('/users', { method: 'POST', body: data })) },
+    );
+    if (res) {
+      toast(`Added ${res.username}`);
+      route();
+    }
+  };
+
+  view.querySelector('tbody').addEventListener('click', async (e) => {
+    const btn = e.target.closest('button[data-act]');
+    if (!btn) return;
+    const row = btn.closest('tr');
+    const { id, name, role } = row.dataset;
+    try {
+      if (btn.dataset.act === 'edit') {
+        const res = await modal(
+          `<div class="dlg-body form"><h2>Edit ${esc(name)}</h2>
+            <label>Username <input name="username" value="${esc(name)}" required maxlength="64" autocapitalize="none" spellcheck="false"></label>
+            <label>Role ${roleSelect(role)}</label>
+            <p class="form-error" hidden></p></div>
+          <div class="dlg-foot"><button type="button" class="btn" data-cancel>Cancel</button><button class="btn primary">Save</button></div>`,
+          { onOpen: submitInDialog((data) => api(`/users/${id}`, { method: 'PATCH', body: data })) },
+        );
+        if (!res) return;
+        if (id === me.id) return startApp(res);
+        toast('Saved');
+      } else if (btn.dataset.act === 'password') {
+        const res = await modal(
+          `<div class="dlg-body form"><h2>Set a new password for ${esc(name)}</h2>
+            <label>New password <input type="password" name="password" required minlength="8" autocomplete="new-password"></label>
+            <p class="muted" style="margin:0">${id === me.id ? 'Your other devices will be signed out.' : 'They will be signed out everywhere and need the new password.'}</p>
+            <p class="form-error" hidden></p></div>
+          <div class="dlg-foot"><button type="button" class="btn" data-cancel>Cancel</button><button class="btn primary">Set password</button></div>`,
+          { onOpen: submitInDialog((data) => api(`/users/${id}`, { method: 'PATCH', body: data })) },
+        );
+        if (!res) return;
+        toast('Password changed');
+      } else if (btn.dataset.act === 'delete') {
+        if (!(await confirmModal(`Delete ${name}?`, 'They will be signed out and can no longer sign in.'))) return;
+        await api(`/users/${id}`, { method: 'DELETE' });
+        toast('User deleted');
+      }
+      route();
+    } catch (err) {
+      fail(err);
+    }
+  });
+}
+
 // ---------- boot ----------
 
 api('/auth/session')
-  .then((s) => (s.signedIn ? startApp() : showLogin()))
+  .then((s) => (s.signedIn ? startApp(s.user) : showLogin()))
   .catch(() => showLogin());

@@ -4,7 +4,7 @@
  * Needs a running server (docker compose up -d) and Playwright's Chromium.
  *   cd e2e && npm install && npx playwright install chromium && npm test
  *
- * Env: BASE_URL (default http://localhost:8080), ADMIN_PASSWORD (default admin).
+ * Env: BASE_URL (default http://localhost:8080), ADMIN_USERNAME / ADMIN_PASSWORD (default admin / admin).
  * ffmpeg on PATH adds a video to the test; without it the video steps are skipped.
  *
  * It drives the dashboard like a person would, pairs a separate headless "screen",
@@ -18,6 +18,7 @@ const path = require('node:path');
 const assert = require('node:assert/strict');
 
 const BASE = (process.env.BASE_URL || 'http://localhost:8080').replace(/\/$/, '');
+const USERNAME = process.env.ADMIN_USERNAME || 'admin';
 const PASSWORD = process.env.ADMIN_PASSWORD || 'admin';
 const OUT = path.join(__dirname, 'screenshots');
 const FIX = path.join(__dirname, 'test-results', 'fixtures');
@@ -97,6 +98,7 @@ const visibleKind = (player) =>
     // --- Dashboard: sign in
     log('Sign in to the dashboard');
     await dash.goto(BASE);
+    await dash.fill('input[name=username]', USERNAME);
     await dash.fill('input[name=password]', PASSWORD);
     await dash.click('button[type=submit]');
     await dash.waitForSelector('h1:has-text("Screens")');
@@ -196,7 +198,7 @@ const visibleKind = (player) =>
 
     log('Dashboard shows the screen online with a live connection and what it is playing');
     await dash.reload();
-    const row = dash.locator(`tr:has-text("Reception ${RUN}")`);
+    let row = dash.locator(`tr:has-text("Reception ${RUN}")`);
     await waitFor(async () => (await row.textContent()).includes('Live connection'), { what: 'online status' });
     await shot(dash, '07-dashboard-screens-online');
 
@@ -285,6 +287,53 @@ const visibleKind = (player) =>
     await row.locator('[data-act=reload]').click();
     await waitFor(async () => (await player.evaluate(() => performance.timeOrigin).catch(() => t0)) !== t0, { what: 'reload' });
     await waitFor(async () => (await playing(player)) !== null, { what: 'playing after reload' });
+
+    // --- Roles: a standard user can edit screens but not pair or remove them
+    const stdName = `staff${RUN.toLowerCase()}`;
+    log(`Super admin adds a standard user "${stdName}"`);
+    await dash.click('a[data-nav=users]');
+    await dash.click('#add-user');
+    await dash.fill('dialog input[name=username]', stdName);
+    await dash.fill('dialog input[name=password]', 'staff-pass-1');
+    await dash.selectOption('dialog select[name=role]', 'standard');
+    await dash.click('dialog button.primary');
+    await dash.waitForSelector(`tr[data-name="${stdName}"]`);
+    await shot(dash, '10-dashboard-users');
+
+    log('Standard user can rename a screen but sees no Pair or Remove buttons');
+    const stdCtx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    const std = await stdCtx.newPage();
+    std.on('pageerror', (e) => failures.push(`standard dashboard error: ${e.message}`));
+    await std.goto(BASE);
+    await std.fill('input[name=username]', stdName);
+    await std.fill('input[name=password]', 'staff-pass-1');
+    await std.click('button[type=submit]');
+    await std.waitForSelector(`td:has-text("Reception ${RUN}")`);
+    assert.equal(await std.locator('#pair').count(), 0, 'no Pair button');
+    assert.equal(await std.locator('[data-act=delete]').count(), 0, 'no Remove button');
+    assert.ok(await std.locator('a[data-nav=users]').isHidden(), 'no Users link');
+    await std.locator(`tr:has-text("Reception ${RUN}") [data-act=rename]`).click();
+    await std.fill('dialog input[name=name]', `Front desk ${RUN}`);
+    await std.click('dialog button.primary');
+    await std.waitForSelector(`td:has-text("Front desk ${RUN}")`);
+    await shot(std, '11-dashboard-standard-user');
+
+    log('Server refuses pairing, removing screens and managing users for a standard user');
+    const stdApi = std.request;
+    const screenId = await std.locator(`tr:has-text("Front desk ${RUN}")`).getAttribute('data-id');
+    assert.equal((await stdApi.post(`${BASE}/api/screens/pair`, { data: { code: 'ABC123' } })).status(), 403);
+    assert.equal((await stdApi.delete(`${BASE}/api/screens/${screenId}`)).status(), 403);
+    assert.equal((await stdApi.get(`${BASE}/api/users`)).status(), 403);
+    await stdCtx.close();
+
+    log('Super admin deletes the standard user');
+    await dash.click('a[data-nav=users]');
+    await dash.locator(`tr[data-name="${stdName}"] [data-act=delete]`).click();
+    await dash.click('dialog button.primary');
+    await waitFor(async () => (await dash.locator(`tr[data-name="${stdName}"]`).count()) === 0, { what: 'user deleted' });
+    await dash.click('a[data-nav=screens]');
+    await dash.waitForSelector(`td:has-text("Front desk ${RUN}")`);
+    row = dash.locator(`tr[data-id="${screenId}"]`);
 
     log('Removing the screen sends the player back to pairing');
     await row.locator('[data-act=delete]').click();
