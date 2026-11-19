@@ -30,7 +30,7 @@ Sinewave aims to make it simple to run digital signage on ordinary hardware: bui
 You need Docker with Compose.
 
 ```sh
-git clone https://github.com/elliottmarter/open-signage-app.git sinewave
+git clone https://github.com/elliottmarter/Sinewave.git sinewave
 cd sinewave
 cp .env.example .env        # then set ADMIN_PASSWORD and POSTGRES_PASSWORD
 docker compose up -d --build
