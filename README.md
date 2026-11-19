@@ -1,8 +1,8 @@
-# Open Signage App
+# Sinewave
 
 Open source digital signage software.
 
-Open Signage App aims to make it simple to run digital signage on ordinary hardware: build content, schedule it, and push it to screens without vendor lock-in or licence fees.
+Sinewave aims to make it simple to run digital signage on ordinary hardware: build content, schedule it, and push it to screens without vendor lock-in or licence fees.
 
 ## Goals
 
