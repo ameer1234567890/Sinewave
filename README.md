@@ -44,6 +44,8 @@ services:
       # SECURE_COOKIES: "true"       # set both when serving over HTTPS behind a reverse proxy
       # TRUST_PROXY: "true"
       # MAX_UPLOAD_MB: "1024"
+      # PUID: "1000"                # owner of /data (Unraid: 99 / 100)
+      # PGID: "1000"
     volumes:
       - sinewave-data:/data          # SQLite database and uploaded media
 
@@ -99,6 +101,7 @@ Browsers only allow service workers, and so offline caching, on **HTTPS** or **l
 | `MAX_UPLOAD_MB` | `1024` | Largest file you can upload. |
 | `SECURE_COOKIES` | `false` | Mark the session cookie `Secure` (set when using HTTPS). |
 | `TRUST_PROXY` | `false` | Trust `X-Forwarded-*` headers from a reverse proxy. |
+| `PUID` / `PGID` | `1000` / `1000` | User and group that own `/data` and run the server. The container fixes ownership of `/data` at startup, so a host folder mounted there just works. On Unraid use `99` / `100`. |
 
 Sinewave runs as a single container. Everything it stores, the SQLite database (`sinewave.db`) and uploaded media, lives in the `data` volume mounted at `/data`, so backing up that one volume backs up everything. Outside Docker, set `DATA_DIR` to choose the folder.
 
