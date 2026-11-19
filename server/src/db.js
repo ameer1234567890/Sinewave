@@ -79,7 +79,10 @@ export function withTransaction(fn) {
 
 export const isForeignKeyError = (err) => /FOREIGN KEY constraint failed/i.test(err?.message || '');
 
-/** Apply any .sql files in migrations/ that have not been applied yet, in name order. */
+/**
+ * Apply any .sql files in migrations/ that have not been applied yet, in name order.
+ * Returns true when the database was brand new (no migration had ever run), i.e. a fresh install.
+ */
 export function migrate() {
   db.exec(`CREATE TABLE IF NOT EXISTS schema_migrations (
     name TEXT PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')))`);
@@ -94,6 +97,7 @@ export function migrate() {
     });
     console.log(`Applied migration ${file}`);
   }
+  return applied.size === 0;
 }
 
 export function closeDatabase() {
