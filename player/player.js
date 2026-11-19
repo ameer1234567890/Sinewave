@@ -336,7 +336,8 @@
       el = document.createElement('iframe');
       el.src = src;
       el.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-forms');
-      el.setAttribute('referrerpolicy', 'no-referrer');
+      // Send our origin (never the full URL): many embeds (maps, video players) refuse to load without a referrer.
+      el.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
       next.append(el);
       await Promise.race([new Promise((r) => (el.onload = r)), sleep(8000)]);
     } else {

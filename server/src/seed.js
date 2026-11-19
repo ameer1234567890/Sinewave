@@ -16,7 +16,7 @@ export const DEMO_ITEMS = [
   {
     kind: 'web',
     name: 'Demo: Live wind map',
-    url: 'https://embed.windy.com/embed2.html?lat=30&lon=0&detailLat=30&detailLon=0&zoom=3&level=surface&overlay=wind&product=ecmwf&menu=&message=true&marker=&calendar=now&pressure=&type=map&location=coordinates&detail=&metricWind=default&metricTemp=default&radarRange=-1',
+    url: 'https://embed.windy.com/embed.html?type=map&location=coordinates&metricRain=default&metricTemp=default&metricWind=default&zoom=3&overlay=wind&product=ecmwf&level=surface&lat=30&lon=0',
     seconds: 30,
   },
   { kind: 'image', name: 'Demo: Make it yours', file: 'make-it-yours.jpg', seconds: 12 },
