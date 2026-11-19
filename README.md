@@ -21,6 +21,7 @@ Sinewave aims to make it simple to run digital signage on ordinary hardware: bui
 - **Screen pairing**: open the player on a display, it shows a 6-character code, and you type that code into the dashboard.
 - **Live updates**: each player keeps a WebSocket open, so a saved playlist shows up on screen in well under a second. Polling covers the gaps if the socket drops.
 - **Offline playback**: the player caches its files with a service worker and keeps looping them if the network or server goes away, including after a reboot.
+- **Demo playlist**: a fresh install comes with a playlist called **Demo** (a few getting-started slides and a couple of live web pages), so a new screen has something to show straight away. Delete it whenever you like; it is only created once.
 - **Fleet status**: see which screens are online, what they are playing, and send a refresh or reload remotely.
 
 | Playlist editor | Player waiting to pair | Player showing content |
@@ -56,7 +57,7 @@ volumes:
 The image is built for `amd64` and `arm64`, so it also runs on a Raspberry Pi 4 or 5.
 
 1. Open **http://localhost:8080** and sign in as `admin` with your `ADMIN_PASSWORD`.
-2. Upload some media under **Media**, then create a playlist under **Playlists** and add items to it.
+2. Upload some media under **Media**, then create a playlist under **Playlists** and add items to it. Or skip this and use the **Demo** playlist that comes with a fresh install.
 3. On the screen you want to use, open **http://&lt;server&gt;:8080/player/**. It shows a pairing code.
 4. In the dashboard, go to **Screens → Pair screen**, type the code, name the screen and pick the playlist.
 
