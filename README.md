@@ -1,5 +1,7 @@
 # Sinewave
 
+**Everyone, on the same wavelength.**
+
 Open source digital signage software.
 
 Sinewave aims to make it simple to run digital signage on ordinary hardware: build content, schedule it, and push it to screens without vendor lock-in or licence fees.
