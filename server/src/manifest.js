@@ -1,11 +1,13 @@
 import { query } from './db.js';
 import { sha256 } from './util.js';
+import { newsContent, newsDefaultSeconds } from './news.js';
 
 export const DEFAULT_IMAGE_SECONDS = 10;
 export const DEFAULT_WEB_SECONDS = 30;
 
 export function mediaUrl(media) {
-  if (media.kind === 'web') return media.url;
+  // Web pages and news items point at their external page or feed.
+  if (media.kind === 'web' || media.kind === 'news') return media.url;
   return `/media/${media.id}/${encodeURIComponent(media.filename)}`;
 }
 
@@ -21,7 +23,7 @@ export async function buildManifest(screen) {
     if (pl.length) {
       const { rows: items } = await query(
         `SELECT pi.id, pi.duration_seconds, m.id AS media_id, m.name, m.kind, m.mime_type,
-                m.filename, m.url, m.size_bytes, m.checksum
+                m.filename, m.url, m.size_bytes, m.checksum, m.options
            FROM playlist_items pi JOIN media m ON m.id = pi.media_id
           WHERE pi.playlist_id = $1 ORDER BY pi.position`,
         [screen.playlist_id],
@@ -29,21 +31,35 @@ export async function buildManifest(screen) {
       playlist = {
         id: pl[0].id,
         name: pl[0].name,
-        items: items.map((r) => ({
-          id: r.id,
-          mediaId: r.media_id,
-          name: r.name,
-          kind: r.kind,
-          mimeType: r.mime_type,
-          url: mediaUrl({ id: r.media_id, kind: r.kind, filename: r.filename, url: r.url }),
-          // Only files can be cached for offline playback; web pages are always live.
-          cacheable: r.kind !== 'web',
-          sizeBytes: r.size_bytes === null ? null : Number(r.size_bytes),
-          checksum: r.checksum,
-          // null for video means "play to the end".
-          durationSeconds:
-            r.duration_seconds ?? (r.kind === 'image' ? DEFAULT_IMAGE_SECONDS : r.kind === 'web' ? DEFAULT_WEB_SECONDS : null),
-        })),
+        items: items.map((r) => {
+          const item = {
+            id: r.id,
+            mediaId: r.media_id,
+            name: r.name,
+            kind: r.kind,
+            mimeType: r.mime_type,
+            url: mediaUrl({ id: r.media_id, kind: r.kind, filename: r.filename, url: r.url }),
+            // Only files can be cached for offline playback; web pages are always live.
+            cacheable: r.kind === 'image' || r.kind === 'video',
+            sizeBytes: r.size_bytes === null ? null : Number(r.size_bytes),
+            checksum: r.checksum,
+            // null for video means "play to the end".
+            durationSeconds:
+              r.duration_seconds ?? (r.kind === 'image' ? DEFAULT_IMAGE_SECONDS : r.kind === 'web' ? DEFAULT_WEB_SECONDS : null),
+          };
+          if (r.kind === 'news') {
+            // The stories travel inside the manifest, so the player keeps them for offline use,
+            // and a feed update changes the manifest version like any other content change.
+            const news = newsContent(r);
+            item.news = news;
+            item.checksum = sha256(JSON.stringify(news.stories));
+            item.assets = news.stories.map((s) => s.image).filter(Boolean);
+            item.durationSeconds = r.duration_seconds ?? newsDefaultSeconds(news);
+            delete news.fetchedAt; // changes on every refresh; keep it out of the version
+            delete news.error;
+          }
+          return item;
+        }),
       };
     }
   }

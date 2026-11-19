@@ -42,3 +42,122 @@ html, body {
   white-space: pre; pointer-events: none;
 }
 #debug[hidden] { display: none; }
+
+/* ---------- News ---------- */
+.news {
+  --accent: #e5484d;
+  --bg: #0b0d12; --fg: #fff; --muted: rgba(255, 255, 255, 0.78); --track: rgba(255, 255, 255, 0.22);
+  --scrim: linear-gradient(180deg, rgba(5, 7, 12, 0.55) 0%, rgba(5, 7, 12, 0) 22%, rgba(5, 7, 12, 0) 38%, rgba(5, 7, 12, 0.88) 78%, rgba(5, 7, 12, 0.96) 100%);
+  position: absolute; inset: 0; overflow: hidden;
+  background: var(--bg); color: var(--fg);
+  font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+}
+.news.theme-light {
+  --bg: #f4f2ee; --fg: #14161b; --muted: rgba(20, 22, 27, 0.72); --track: rgba(20, 22, 27, 0.18);
+  --scrim: linear-gradient(180deg, rgba(244, 242, 238, 0.7) 0%, rgba(244, 242, 238, 0) 22%, rgba(244, 242, 238, 0) 36%, rgba(244, 242, 238, 0.9) 76%, rgba(244, 242, 238, 0.98) 100%);
+}
+
+/* Photo area. Pictures cross-fade and drift slowly so a still screen still feels alive. */
+.news-media { position: absolute; inset: 0; overflow: hidden; background: var(--bg); }
+.news-media img {
+  position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover;
+  transition: opacity 900ms ease; animation: news-drift 30s ease-out both;
+}
+.news-media img.entering, .news-media img.leaving { opacity: 0; }
+.news-media.no-image {
+  background:
+    radial-gradient(circle at 18% 22%, color-mix(in srgb, var(--accent) 55%, transparent) 0%, transparent 55%),
+    radial-gradient(circle at 85% 80%, color-mix(in srgb, var(--accent) 30%, transparent) 0%, transparent 50%),
+    var(--bg);
+}
+@keyframes news-drift { from { transform: scale(1.08); } to { transform: scale(1); } }
+
+/* Header: badge, source name, clock. */
+.news-head {
+  position: absolute; z-index: 3; top: 4.5vmin; left: 5.5vmin; right: 5.5vmin;
+  display: flex; align-items: center; gap: 2vmin; font-size: 2.6vmin; font-weight: 600;
+}
+.news-badge {
+  background: var(--accent); color: #fff; text-transform: uppercase; letter-spacing: 0.14em;
+  font-size: 0.78em; font-weight: 800; padding: 0.55em 0.9em 0.5em; border-radius: 0.4em;
+}
+.news-source { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.news-clock { margin-left: auto; font-variant-numeric: tabular-nums; font-weight: 700; font-size: 1.15em; }
+
+/* Story progress, one segment per story. */
+.news-progress { position: absolute; z-index: 3; left: 5.5vmin; right: 5.5vmin; bottom: 3.6vmin; display: flex; gap: 0.9vmin; }
+.news-bar { flex: 1; height: 0.55vmin; min-height: 3px; border-radius: 1vmin; background: var(--track); overflow: hidden; }
+.news-bar i { display: block; height: 100%; width: 0; background: var(--fg); }
+.news-bar.done i { width: 100%; }
+.news-bar.active i { animation: news-fill var(--story-ms, 10s) linear forwards; }
+@keyframes news-fill { from { width: 0; } to { width: 100%; } }
+
+/* Story text. Old and new stories share one grid cell so they can cross-fade. */
+.news-body { position: absolute; z-index: 2; display: grid; }
+.news-story {
+  grid-area: 1 / 1; align-self: end;
+  transition: opacity 650ms ease, transform 650ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.news-story.entering { opacity: 0; transform: translateY(3vmin); }
+.news-story.leaving { opacity: 0; transform: translateY(-1.5vmin); }
+.news-meta { display: flex; gap: 2.2vmin; align-items: center; font-size: 2.3vmin; font-weight: 600; color: var(--muted); margin-bottom: 1.8vmin; }
+.news-time { color: var(--accent); font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.9em; }
+.theme-dark .news-time { filter: brightness(1.35); }
+.news-count { font-variant-numeric: tabular-nums; }
+.news-title {
+  margin: 0; font-size: 6.4vmin; line-height: 1.08; font-weight: 800; letter-spacing: -0.015em; text-wrap: balance;
+  display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden;
+}
+.news-summary {
+  margin: 2.4vmin 0 0; font-size: 2.9vmin; line-height: 1.42; color: var(--muted); max-width: 68ch; text-wrap: pretty;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+}
+.news-waiting { font-size: 3.4vmin; color: var(--muted); align-self: center; }
+.news-empty .news-body { inset: 0; place-items: center; }
+
+/* Feature: photo fills the screen, text sits on a scrim at the bottom. */
+.layout-feature .news-media::after { content: ""; position: absolute; inset: 0; background: var(--scrim); z-index: 1; }
+.layout-feature .news-body { left: 5.5vmin; right: 18vw; bottom: 9vmin; }
+.theme-dark.layout-feature .news-head, .theme-dark.layout-feature .news-story { text-shadow: 0 0.3vmin 2.5vmin rgba(0, 0, 0, 0.45); }
+
+/* Split: photo on the left, story on the right. */
+.layout-split .news-media { right: 48%; }
+.layout-split .news-media::after { content: ""; position: absolute; inset: 0 0 0 auto; width: 0.8vmin; background: var(--accent); }
+.layout-split .news-head { left: calc(52% + 5.5vmin); }
+.layout-split .news-progress { left: calc(52% + 5.5vmin); }
+.layout-split .news-body { left: calc(52% + 5.5vmin); right: 5.5vmin; top: 13vmin; bottom: 10vmin; }
+.layout-split .news-story { align-self: center; }
+.layout-split .news-title { font-size: 5.4vmin; -webkit-line-clamp: 5; }
+.layout-split .news-media.no-image + .news-head { left: 5.5vmin; }
+
+/* Headlines: a list on the left, the current story's photo on the right. */
+.layout-headlines .news-media { left: 60%; top: 13vmin; right: 5.5vmin; bottom: 10vmin; border-radius: 2vmin; }
+.layout-headlines .news-media.no-image { display: none; }
+.layout-headlines .news-body { left: 5.5vmin; right: calc(40% + 4vmin); top: 13vmin; bottom: 10vmin; align-content: center; }
+.layout-headlines .news-media.no-image ~ .news-body { right: 5.5vmin; }
+.news-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1.2vmin; }
+.news-list li {
+  display: flex; gap: 2.2vmin; align-items: flex-start; padding: 1.6vmin 2vmin; border-radius: 1.4vmin;
+  transition: background 500ms ease;
+}
+.news-list li.current { background: color-mix(in srgb, var(--accent) 16%, transparent); box-shadow: inset 0.6vmin 0 0 var(--accent); }
+.news-num {
+  flex: none; width: 4.4vmin; height: 4.4vmin; border-radius: 50%; display: grid; place-items: center;
+  font-size: 2.2vmin; font-weight: 800; background: var(--track); font-variant-numeric: tabular-nums;
+}
+.news-list li.current .news-num { background: var(--accent); color: #fff; }
+.news-li-text { min-width: 0; }
+.news-li-title {
+  font-size: 3vmin; font-weight: 700; line-height: 1.2; color: var(--muted);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.news-list li.current .news-li-title { font-size: 3.8vmin; color: var(--fg); -webkit-line-clamp: 3; }
+.news-li-summary {
+  margin-top: 1vmin; font-size: 2.4vmin; line-height: 1.4; color: var(--muted);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.news-li-time { margin-top: 0.8vmin; font-size: 1.9vmin; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: 0.08em; }
+
+@media (prefers-reduced-motion: reduce) {
+  .news-media img { animation: none; }
+}

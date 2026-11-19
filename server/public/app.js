@@ -67,11 +67,26 @@ function bytes(n) {
 function preview(media) {
   if (media.kind === 'image') return `<img src="${esc(media.url)}" alt="" loading="lazy">`;
   if (media.kind === 'video') return `<video src="${esc(media.url)}#t=1" muted preload="metadata"></video>`;
+  if (media.kind === 'news') {
+    const n = media.news || {};
+    return `<div class="news-thumb ${n.options?.theme === 'light' ? 'light' : ''}" style="--news-accent:${esc(n.options?.accent || '#e5484d')}">
+      ${n.image && n.options?.showImages !== false ? `<img src="${esc(n.image)}" alt="" loading="lazy">` : ''}
+      <span class="news-thumb-text">${esc(n.headline || 'Waiting for headlines…')}</span></div>`;
+  }
   return `<span>🌐 Web page</span>`;
 }
 
+/** Seconds a playlist item shows for when no duration is set. */
+function defaultDuration(m) {
+  if (m.kind === 'video') return 'full';
+  if (m.kind === 'web') return 30;
+  if (m.kind === 'news') return Math.max(1, m.news?.storyCount || 0) * (m.news?.options?.secondsPerStory || 10);
+  return 10;
+}
+
 /** Show a modal built from HTML. Resolves with the submitted form's data, or null if cancelled. */
-function modal(html, { onOpen } = {}) {
+function modal(html, { onOpen, wide = false } = {}) {
+  dialog.classList.toggle('wide', wide);
   dialog.innerHTML = `<form method="dialog">${html}</form>`;
   const form = dialog.querySelector('form');
   return new Promise((resolve) => {
@@ -218,6 +233,7 @@ function screenPreview(s) {
   }
   if (m.kind === 'image') return `<img src="${esc(m.url)}" alt="">`;
   if (m.kind === 'video') return `<video src="${esc(m.url)}" muted autoplay loop playsinline preload="auto"></video>`;
+  if (m.kind === 'news') return preview(m);
   // A dashboard shown inside a preview would preview itself forever; stop at one level.
   if (window.top !== window) return `<div class="preview-empty"><span>🌐 ${esc(m.name)}</span></div>`;
   return `<iframe src="${esc(m.url)}" tabindex="-1" loading="lazy" sandbox="allow-scripts allow-same-origin" referrerpolicy="no-referrer" allow="autoplay 'none'" title="${esc(m.name)}"></iframe>`;
@@ -418,8 +434,9 @@ async function pairScreen() {
 async function mediaPage() {
   view.innerHTML = `
     <div class="page-head">
-      <div><h1>Media</h1><div class="sub">Images, videos and web pages to put in playlists</div></div>
+      <div><h1>Media</h1><div class="sub">Images, videos, web pages and news to put in playlists</div></div>
       <div class="actions">
+        <button class="btn" id="add-news">+ News</button>
         <button class="btn" id="add-web">+ Web page</button>
         <label class="btn primary" style="flex-direction:row">+ Upload<input type="file" id="file" multiple accept="image/*,video/*" hidden></label>
       </div>
@@ -431,7 +448,7 @@ async function mediaPage() {
     const media = await api('/media');
     const box = document.getElementById('media');
     if (!media.length) {
-      box.innerHTML = `<div class="card empty"><strong>No media yet</strong>Upload images or videos, or add a web page.</div>`;
+      box.innerHTML = `<div class="card empty"><strong>No media yet</strong>Upload images or videos, or add a web page or news feed.</div>`;
       return;
     }
     box.innerHTML = `<div class="grid">${media
@@ -439,8 +456,9 @@ async function mediaPage() {
         (m) => `<div class="card tile" data-id="${m.id}">
         <div class="thumb">${preview(m)}<span class="badge">${m.kind}</span></div>
         <div class="tile-body"><div class="tile-name" title="${esc(m.name)}">${esc(m.name)}</div>
-          <div class="muted">${m.kind === 'web' ? esc(new URL(m.url).hostname) : bytes(m.sizeBytes)}${m.usedIn ? ` · in ${m.usedIn} playlist${m.usedIn > 1 ? 's' : ''}` : ''}</div></div>
-        <div class="tile-foot"><button class="link" data-act="rename">Rename</button><button class="link" data-act="delete" style="color:var(--danger)">Delete</button></div>
+          <div class="muted">${mediaDetail(m)}${m.usedIn ? ` · in ${m.usedIn} playlist${m.usedIn > 1 ? 's' : ''}` : ''}</div>
+          ${m.news?.error ? `<div class="muted" style="color:var(--warn)" title="${esc(m.news.error)}">⚠ Last update failed</div>` : ''}</div>
+        <div class="tile-foot">${m.kind === 'news' ? '<button class="link" data-act="news">Settings</button>' : '<button class="link" data-act="rename">Rename</button>'}<button class="link" data-act="delete" style="color:var(--danger)">Delete</button></div>
       </div>`,
       )
       .join('')}</div>`;
@@ -487,6 +505,10 @@ async function mediaPage() {
     uploadFiles([...e.dataTransfer.files]);
   };
 
+  document.getElementById('add-news').onclick = async () => {
+    if (await newsDialog()) render();
+  };
+
   document.getElementById('add-web').onclick = async () => {
     const res = await modal(`
       <div class="dlg-body form"><h2>Add a web page</h2>
@@ -506,6 +528,12 @@ async function mediaPage() {
     const id = tile.dataset.id;
     const name = tile.querySelector('.tile-name').textContent;
     try {
+      if (btn.dataset.act === 'news') {
+        const media = (await api('/media')).find((m) => m.id === id);
+        if (!media) return render();
+        if (await newsDialog(media)) render();
+        return;
+      }
       if (btn.dataset.act === 'rename') {
         const res = await modal(`
           <div class="dlg-body form"><h2>Rename</h2><label>Name <input name="name" value="${esc(name)}" required maxlength="200"></label></div>
@@ -524,6 +552,155 @@ async function mediaPage() {
   });
 
   await render();
+}
+
+function mediaDetail(m) {
+  if (m.kind === 'web') return esc(new URL(m.url).hostname);
+  if (m.kind === 'news') {
+    const n = m.news || {};
+    return `${esc(n.feedTitle || new URL(m.url).hostname)}${n.storyCount ? ` · ${n.storyCount} stories` : ''}`;
+  }
+  return bytes(m.sizeBytes);
+}
+
+// ---------- news ----------
+
+let popularFeeds;
+
+const NEWS_LAYOUTS = [
+  ['feature', 'Feature', 'Full-screen photo with the headline over it'],
+  ['split', 'Split', 'Photo on the left, story on the right'],
+  ['headlines', 'Headlines', 'A list of headlines, one highlighted at a time'],
+];
+
+/** Add a news item, or change one (pass the media). Resolves with the saved media, or null if cancelled. */
+async function newsDialog(media = null) {
+  popularFeeds ??= await api('/news/feeds').catch(() => []);
+  const o = media?.news?.options || {
+    layout: 'feature', theme: 'dark', accent: '#e5484d', maxStories: 8, secondsPerStory: 10,
+    showImages: true, showSummary: true, showTime: true, label: '',
+  };
+  const current = media?.news?.feedUrl || popularFeeds[0]?.feeds[0]?.url || '';
+  const known = popularFeeds.some((g) => g.feeds.some((f) => f.url === current));
+  const checked = (b) => (b ? 'checked' : '');
+
+  const html = `
+    <div class="dlg-body form news-form">
+      <h2>${media ? 'News settings' : 'Add news'}</h2>
+      <p class="muted" style="margin:-8px 0 0">Headlines from an RSS or Atom feed, shown as a full-screen slide. Feeds refresh every 15 minutes, and screens keep the latest stories for offline playback.</p>
+      <fieldset><legend>Feed</legend>
+        <div class="feed-picker">${popularFeeds
+          .map(
+            (g) => `<div class="feed-group"><div class="feed-group-name">${esc(g.group)}</div><div class="chips">${g.feeds
+              .map((f) => `<label class="chip"><input type="radio" name="feedChoice" value="${esc(f.url)}" data-name="${esc(f.name)}" ${f.url === current ? 'checked' : ''}><span>${esc(f.name)}</span></label>`)
+              .join('')}</div></div>`,
+          )
+          .join('')}
+          <div class="feed-group"><div class="feed-group-name">Your own</div><div class="chips">
+            <label class="chip"><input type="radio" name="feedChoice" value="custom" ${known ? '' : 'checked'}><span>Custom feed URL…</span></label></div></div>
+        </div>
+        <label class="custom-url" ${known ? 'hidden' : ''}>Feed URL <input name="customUrl" type="url" placeholder="https://example.com/feed.xml" value="${known ? '' : esc(current)}"></label>
+      </fieldset>
+      <label>Name <input name="name" maxlength="200" placeholder="Defaults to the feed's name" value="${esc(media?.name || '')}"></label>
+      <fieldset><legend>Layout</legend>
+        <div class="layout-picker">${NEWS_LAYOUTS.map(
+          ([v, label, hint]) => `<label class="layout-opt" title="${esc(hint)}"><input type="radio" name="layout" value="${v}" ${o.layout === v ? 'checked' : ''}>
+            <span class="layout-art art-${v}"><i></i><b></b><b></b><b></b></span><span>${label}</span></label>`,
+        ).join('')}</div>
+      </fieldset>
+      <div class="row3">
+        <label>Theme <select name="theme"><option value="dark" ${o.theme === 'dark' ? 'selected' : ''}>Dark</option><option value="light" ${o.theme === 'light' ? 'selected' : ''}>Light</option></select></label>
+        <label>Accent <input type="color" name="accent" value="${esc(o.accent)}"></label>
+        <label>Header text <input name="label" maxlength="80" placeholder="Feed name" value="${esc(o.label || '')}"></label>
+      </div>
+      <div class="row3">
+        <label>Stories <input type="number" name="maxStories" min="1" max="20" value="${o.maxStories}"></label>
+        <label>Seconds each <input type="number" name="secondsPerStory" min="3" max="120" value="${o.secondsPerStory}"></label>
+        <div class="muted total-time" style="align-self:end;padding-bottom:8px"></div>
+      </div>
+      <div class="checks">
+        <label class="check"><input type="checkbox" name="showImages" ${checked(o.showImages)}> Photos</label>
+        <label class="check"><input type="checkbox" name="showSummary" ${checked(o.showSummary)}> Summaries</label>
+        <label class="check"><input type="checkbox" name="showTime" ${checked(o.showTime)}> How long ago</label>
+      </div>
+      <p class="form-error" hidden></p>
+    </div>
+    <div class="dlg-foot">
+      ${media ? '<button type="button" class="btn" data-refresh style="margin-right:auto">Refresh now</button>' : ''}
+      <button type="button" class="btn" data-cancel>Cancel</button>
+      <button class="btn primary">${media ? 'Save' : 'Add news'}</button>
+    </div>`;
+
+  const save = async (data) => {
+    const feedUrl = data.feedChoice === 'custom' ? (data.customUrl || '').trim() : data.feedChoice;
+    if (!feedUrl) throw new Error('Pick a feed, or enter a feed URL');
+    const body = {
+      feedUrl,
+      name: data.name,
+      options: {
+        layout: data.layout,
+        theme: data.theme,
+        accent: data.accent,
+        label: data.label,
+        maxStories: Number(data.maxStories),
+        secondsPerStory: Number(data.secondsPerStory),
+        showImages: data.showImages === 'on',
+        showSummary: data.showSummary === 'on',
+        showTime: data.showTime === 'on',
+      },
+    };
+    const btn = dialog.querySelector('.dlg-foot .primary');
+    btn.disabled = true;
+    btn.textContent = 'Checking feed…';
+    try {
+      return media
+        ? await api(`/media/${media.id}/news`, { method: 'PUT', body })
+        : await api('/media/news', { method: 'POST', body });
+    } finally {
+      btn.disabled = false;
+      btn.textContent = media ? 'Save' : 'Add news';
+    }
+  };
+
+  const res = await modal(html, {
+    wide: true,
+    onOpen: (form, done) => {
+      submitInDialog(save)(form, done);
+      const custom = form.querySelector('.custom-url');
+      const total = form.querySelector('.total-time');
+      const updateTotal = () => {
+        const secs = Number(form.maxStories.value) * Number(form.secondsPerStory.value);
+        total.textContent = secs ? `About ${secs >= 60 ? `${Math.floor(secs / 60)} min ${secs % 60 ? `${secs % 60} s` : ''}` : `${secs} s`} per loop` : '';
+      };
+      form.addEventListener('input', updateTotal);
+      updateTotal();
+      form.querySelectorAll('input[name=feedChoice]').forEach((r) =>
+        r.addEventListener('change', () => {
+          custom.hidden = r.value !== 'custom' || !r.checked;
+          if (!custom.hidden) form.customUrl.focus();
+        }),
+      );
+      // Scroll the feed list (only the list, not the dialog) to the chosen feed.
+      const picker = form.querySelector('.feed-picker');
+      const chosen = form.querySelector('input[name=feedChoice]:checked')?.closest('.feed-group');
+      if (chosen) picker.scrollTop = chosen.offsetTop - 8;
+      form.querySelector('[data-refresh]')?.addEventListener('click', async (e) => {
+        e.target.disabled = true;
+        e.target.textContent = 'Refreshing…';
+        try {
+          await api(`/media/${media.id}/news/refresh`, { method: 'POST' });
+          toast('Feed refreshed');
+        } catch (err) {
+          fail(err);
+        } finally {
+          e.target.disabled = false;
+          e.target.textContent = 'Refresh now';
+        }
+      });
+    },
+  });
+  if (res) toast(media ? 'News settings saved' : `Added ${res.name}`);
+  return res;
 }
 
 // ---------- playlists ----------
@@ -587,7 +764,7 @@ async function playlistEditor(id) {
             ? library
                 .map(
                   (m) => `<div class="lib-item"><div class="mini">${preview(m)}</div>
-                  <div><div class="name" title="${esc(m.name)}">${esc(m.name)}</div><div class="muted">${m.kind}</div></div>
+                  <div style="min-width:0"><div class="name" title="${esc(m.name)}">${esc(m.name)}</div><div class="muted">${m.kind}</div></div>
                   <button class="btn small" data-add="${m.id}">Add</button></div>`,
                 )
                 .join('')
@@ -601,10 +778,6 @@ async function playlistEditor(id) {
   function markDirty() {
     dirty = true;
     document.getElementById('save').textContent = 'Save changes';
-  }
-
-  function defaultDuration(m) {
-    return m.kind === 'video' ? 'full' : m.kind === 'web' ? 30 : 10;
   }
 
   function renderItems() {
@@ -621,7 +794,7 @@ async function playlistEditor(id) {
         <span class="num">${idx + 1}</span>
         <div class="mini">${preview(i.media)}</div>
         <div style="min-width:0"><div class="tile-name">${esc(i.media.name)}</div><div class="muted">${i.media.kind}</div></div>
-        <div class="dur"><input type="number" min="1" max="86400" step="1" data-dur placeholder="${defaultDuration(i.media)}" value="${i.durationSeconds ?? ''}" title="Seconds on screen. Leave blank for the default${i.media.kind === 'video' ? ' (play the whole video)' : ''}."><span class="muted">s</span></div>
+        <div class="dur"><input type="number" min="1" max="86400" step="1" data-dur placeholder="${defaultDuration(i.media)}" value="${i.durationSeconds ?? ''}" title="Seconds on screen. Leave blank for the default${i.media.kind === 'video' ? ' (play the whole video)' : i.media.kind === 'news' ? ' (show every story once)' : ''}."><span class="muted">s</span></div>
         <div class="btns">
           <button class="icon-btn" data-move="-1" ${idx === 0 ? 'disabled' : ''} title="Move up">↑</button>
           <button class="icon-btn" data-move="1" ${idx === items.length - 1 ? 'disabled' : ''} title="Move down">↓</button>

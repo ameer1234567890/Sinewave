@@ -18,6 +18,7 @@ Sinewave aims to make it simple to run digital signage on ordinary hardware: bui
 ## What works today
 
 - **Dashboard** to upload images and videos, add web pages, and build playlists (ordering and per-item durations).
+- **News**: add headlines from popular feeds (BBC, Sky, The Guardian and more) or any RSS or Atom URL, shown as a full-screen slide that rotates through the stories. Pick a layout (feature photo, split, or a headlines list), light or dark theme, accent colour, number of stories and time per story. Feeds are fetched by the server every 15 minutes, and screens keep the latest stories and photos for offline playback.
 - **Screen pairing**: open the player on a display, it shows a 6-character code, and you type that code into the dashboard.
 - **Live updates**: each player keeps a WebSocket open, so a saved playlist shows up on screen in well under a second. Polling covers the gaps if the socket drops.
 - **Offline playback**: the player caches its files with a service worker and keeps looping them if the network or server goes away, including after a reboot.
@@ -27,6 +28,8 @@ Sinewave aims to make it simple to run digital signage on ordinary hardware: bui
 | Playlist editor | Player waiting to pair | Player showing content |
 | --- | --- | --- |
 | ![](docs/images/dashboard-playlist-editor.png) | ![](docs/images/player-pairing-code.png) | ![](docs/images/player-playing-menu.png) |
+
+![A news slide on the player](docs/images/player-news-feature.png)
 
 ## Quick start
 
@@ -102,6 +105,7 @@ Browsers only allow service workers, and so offline caching, on **HTTPS** or **l
 | `PORT` | `8080` | Port published on the host. |
 | `MAX_UPLOAD_MB` | `1024` | Largest file you can upload. |
 | `SECURE_COOKIES` | `false` | Mark the session cookie `Secure` (set when using HTTPS). |
+| `NEWS_REFRESH_MINUTES` | `15` | How often news feeds are re-fetched. |
 | `TRUST_PROXY` | `false` | Trust `X-Forwarded-*` headers from a reverse proxy. |
 | `PUID` / `PGID` | `1000` / `1000` | User and group that own `/data` and run the server. The container fixes ownership of `/data` at startup, so a host folder mounted there just works. On Unraid use `99` / `100`. |
 
@@ -136,6 +140,10 @@ cd server && npm install
 npm run dev                 # data goes in ./data unless DATA_DIR is set
 ```
 
+### Tests
+
+Unit tests for feed parsing: `cd server && npm test`.
+
 ### End-to-end test
 
 With the stack running:
@@ -147,7 +155,7 @@ npx playwright install chromium
 npm test        # BASE_URL, ADMIN_USERNAME and ADMIN_PASSWORD can be overridden
 ```
 
-It uploads media, builds a playlist, pairs a headless player, checks that a playlist change reaches the screen live, then cuts the player's network and checks it keeps playing from its cache. Screenshots are written to `e2e/screenshots/`. If `ffmpeg` is installed the test also covers video.
+It uploads media, builds a playlist, pairs a headless player, checks that a playlist change reaches the screen live, adds a news feed (served by the test itself on port 8098, so a Docker server needs `--network host` or `FEED_HOST=host.docker.internal`), then cuts the player's network and checks it keeps playing from its cache. Screenshots are written to `e2e/screenshots/`. If `ffmpeg` is installed the test also covers video.
 
 ## Status
 

@@ -88,14 +88,24 @@ export function migrate() {
     name TEXT PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')))`);
   const applied = new Set(query('SELECT name FROM schema_migrations').rows.map((r) => r.name));
   const files = fs.readdirSync(config.migrationsDir).filter((f) => f.endsWith('.sql')).sort();
-  for (const file of files) {
-    if (applied.has(file)) continue;
-    const sql = fs.readFileSync(path.join(config.migrationsDir, file), 'utf8');
-    withTransaction(() => {
-      db.exec(sql);
-      query('INSERT INTO schema_migrations (name) VALUES ($1)', [file]);
-    });
-    console.log(`Applied migration ${file}`);
+  // Foreign keys are off while migrating so a migration can rebuild a table (SQLite's way of
+  // changing a constraint) without cascading deletes. They're checked again before commit.
+  // The pragma is a no-op inside a transaction, so it is set out here.
+  db.exec('PRAGMA foreign_keys = OFF');
+  try {
+    for (const file of files) {
+      if (applied.has(file)) continue;
+      const sql = fs.readFileSync(path.join(config.migrationsDir, file), 'utf8');
+      withTransaction(() => {
+        db.exec(sql);
+        const broken = query('PRAGMA foreign_key_check').rows;
+        if (broken.length) throw new Error(`Migration ${file} broke ${broken.length} foreign key reference(s)`);
+        query('INSERT INTO schema_migrations (name) VALUES ($1)', [file]);
+      });
+      console.log(`Applied migration ${file}`);
+    }
+  } finally {
+    db.exec('PRAGMA foreign_keys = ON');
   }
   return applied.size === 0;
 }
