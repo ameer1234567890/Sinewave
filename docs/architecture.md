@@ -42,7 +42,7 @@ Uploaded files are stored at `DATA_DIR/media/<media id>/<file name>`. A file nev
 
 ### Authentication
 
-- **Admins** sign in with `ADMIN_PASSWORD` and get an HMAC-signed, HTTP-only session cookie. Changing the password signs everyone out. This is deliberately simple for the MVP; multi-user accounts and roles come later.
+- **People** sign in with a username and password (stored as salted scrypt hashes in the `users` table) and get an HMAC-signed, HTTP-only session cookie holding their user id. Each request reloads the account, so a role change or deletion applies at once, and changing a password signs that account out elsewhere. Roles are `super_admin` (everything) and `standard` (edit screens, media and playlists, but not pair or remove screens or manage users). The server checks roles on every request; the dashboard only hides what you can't use. The first super admin is created from `ADMIN_PASSWORD` on first boot.
 - **Players** each hold a random device token. The server stores only its sha256. The token goes in an `Authorization: Bearer` header for HTTP and a query parameter for the WebSocket. Removing a screen in the dashboard revokes its token and sends the player back to pairing.
 
 ## Pairing

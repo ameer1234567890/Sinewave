@@ -13,6 +13,8 @@ export const config = {
   playerDir: process.env.PLAYER_DIR || path.resolve(here, '../../player'),
   publicDir: path.resolve(here, '../public'),
   migrationsDir: path.resolve(here, '../migrations'),
+  // Only used on first boot, to create the first super admin account.
+  adminUsername: (process.env.ADMIN_USERNAME || 'admin').trim(),
   adminPassword: process.env.ADMIN_PASSWORD || 'admin',
   // Max upload size in megabytes.
   maxUploadMb: Number(process.env.MAX_UPLOAD_MB || 1024),

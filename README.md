@@ -40,7 +40,7 @@ services:
     ports:
       - "8080:8080"
     environment:
-      ADMIN_PASSWORD: change-me      # dashboard password
+      ADMIN_PASSWORD: change-me      # password for the first account, "admin"
       # SECURE_COOKIES: "true"       # set both when serving over HTTPS behind a reverse proxy
       # TRUST_PROXY: "true"
       # MAX_UPLOAD_MB: "1024"
@@ -53,12 +53,25 @@ volumes:
 
 The image is built for `amd64` and `arm64`, so it also runs on a Raspberry Pi 4 or 5.
 
-1. Open **http://localhost:8080** and sign in with your `ADMIN_PASSWORD`.
+1. Open **http://localhost:8080** and sign in as `admin` with your `ADMIN_PASSWORD`.
 2. Upload some media under **Media**, then create a playlist under **Playlists** and add items to it.
 3. On the screen you want to use, open **http://&lt;server&gt;:8080/player/**. It shows a pairing code.
 4. In the dashboard, go to **Screens → Pair screen**, type the code, name the screen and pick the playlist.
 
 The screen starts playing straight away.
+
+### Users and roles
+
+The first time Sinewave starts, it creates a **super admin** called `admin` using `ADMIN_PASSWORD`. After that, `ADMIN_PASSWORD` is no longer used: change passwords in the dashboard, and add more people under **Users**. There are two roles:
+
+| | Super admin | Standard |
+| --- | --- | --- |
+| Rename screens, change their playlist, refresh and reload them | ✓ | ✓ |
+| Upload and edit media and playlists | ✓ | ✓ |
+| Pair new screens and remove screens | ✓ | |
+| Add, edit and delete users | ✓ | |
+
+There is always at least one super admin. If you're locked out, set `RESET_ADMIN_PASSWORD` to a new password and restart: it resets the `admin` account (or creates it) as a super admin. Remove the variable and restart again afterwards.
 
 ### Running the player in kiosk mode
 
@@ -79,7 +92,9 @@ Browsers only allow service workers, and so offline caching, on **HTTPS** or **l
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `ADMIN_PASSWORD` | `admin` | Dashboard password. Change it. |
+| `ADMIN_PASSWORD` | `admin` | Password for the first super admin, created on first start. Change it. |
+| `ADMIN_USERNAME` | `admin` | Username for that first super admin. |
+| `RESET_ADMIN_PASSWORD` | | Set to reset the `ADMIN_USERNAME` account's password on start. Remove after use. |
 | `PORT` | `8080` | Port published on the host. |
 | `MAX_UPLOAD_MB` | `1024` | Largest file you can upload. |
 | `SECURE_COOKIES` | `false` | Mark the session cookie `Secure` (set when using HTTPS). |
