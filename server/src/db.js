@@ -3,8 +3,25 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { config } from './config.js';
 
-fs.mkdirSync(path.dirname(config.databasePath), { recursive: true });
-export const db = new DatabaseSync(config.databasePath);
+function openDatabase() {
+  const dir = path.dirname(config.databasePath);
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    fs.accessSync(dir, fs.constants.W_OK);
+    return new DatabaseSync(config.databasePath);
+  } catch (err) {
+    const uid = process.getuid?.() ?? '?';
+    const gid = process.getgid?.() ?? '?';
+    console.error(
+      `Cannot open the database at ${config.databasePath} (${err.message}).\n` +
+        `The folder ${dir} must be writable by user ${uid}:${gid}. In Docker, check the volume ` +
+        `mounted at /data, or set PUID/PGID to the user that owns it.`,
+    );
+    process.exit(1);
+  }
+}
+
+export const db = openDatabase();
 db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000; PRAGMA synchronous = NORMAL;');
 // now() returns the same ISO format the schema uses for its defaults.
 db.function('now', () => new Date().toISOString());
