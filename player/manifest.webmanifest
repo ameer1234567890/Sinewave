@@ -1,0 +1,9 @@
+{
+  "name": "Sinewave Player",
+  "short_name": "Signage",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "background_color": "#000000",
+  "theme_color": "#000000"
+}

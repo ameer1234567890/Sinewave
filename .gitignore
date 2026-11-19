@@ -1,0 +1,7 @@
+node_modules/
+.env
+data/
+e2e/screenshots/
+e2e/test-results/
+*.log
+.DS_Store

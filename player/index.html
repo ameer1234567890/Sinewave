@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#000000">
+  <title>Sinewave Player</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="stylesheet" href="player.css">
+</head>
+<body>
+  <!-- Two stacked layers so one item can fade in over the previous one. -->
+  <div id="stage">
+    <div class="layer" id="layer-a"></div>
+    <div class="layer" id="layer-b"></div>
+  </div>
+
+  <section id="pairing" class="panel" hidden>
+    <div class="brand">Sinewave</div>
+    <p class="lead">Pair this screen</p>
+    <div id="pair-code" class="code" aria-live="polite">······</div>
+    <p class="hint">In the dashboard, open <strong>Screens</strong>, choose <strong>Pair screen</strong> and enter this code.</p>
+    <p id="pair-server" class="small"></p>
+    <p id="pair-error" class="small error" hidden></p>
+  </section>
+
+  <section id="idle" class="panel" hidden>
+    <div class="brand">Sinewave</div>
+    <p class="lead" id="idle-name"></p>
+    <p class="hint" id="idle-message">No content has been assigned to this screen yet.</p>
+  </section>
+
+  <div id="debug" hidden></div>
+
+  <script src="player.js"></script>
+</body>
+</html>
