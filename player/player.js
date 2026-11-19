@@ -171,9 +171,12 @@
   async function cacheMedia(manifest) {
     if (!canCache) return;
     const cache = await caches.open(MEDIA_CACHE);
-    const wanted = new Set(
-      (manifest.playlist?.items || []).filter((i) => i.cacheable).map((i) => absolute(i.url)),
-    );
+    const wanted = new Set();
+    for (const item of manifest.playlist?.items || []) {
+      if (item.cacheable) wanted.add(absolute(item.url));
+      // Extra files an item needs, such as the photos of a news item's stories.
+      for (const asset of item.assets || []) wanted.add(absolute(asset));
+    }
     for (const url of wanted) {
       if (await cache.match(url)) continue;
       try {
@@ -198,7 +201,9 @@
     const items = manifest.playlist?.items || [];
     const prevItems = previous?.playlist?.items || [];
     const current = prevItems[state.index];
-    const currentStillThere = current && items.some((i) => i.id === current.id && i.url === current.url);
+    // A news item whose look changed counts as changed; new headlines just wait for the next loop.
+    const sameLook = (a, b) => JSON.stringify(a.news?.options) === JSON.stringify(b.news?.options);
+    const currentStillThere = current && items.some((i) => i.id === current.id && i.url === current.url && sameLook(i, current));
     if (!currentStillThere || previous?.playlist?.id !== manifest.playlist?.id) {
       // What's on screen was removed or the playlist was swapped: switch right away.
       startPlayback();
@@ -314,6 +319,7 @@
     const src = item.kind === 'web' ? item.url : absolute(item.url);
     let el;
     let ended;
+    let news;
 
     if (item.kind === 'image') {
       el = new Image();
@@ -343,11 +349,16 @@
       el.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
       next.append(el);
       await Promise.race([new Promise((r) => (el.onload = r)), sleep(8000)]);
+    } else if (item.kind === 'news') {
+      news = newsSlide(item);
+      el = news.el;
+      next.append(el);
+      await news.ready;
     } else {
       throw new Error(`unknown kind ${item.kind}`);
     }
 
-    if (token !== state.playToken) return;
+    if (token !== state.playToken) return news?.stop();
     next.classList.add('visible');
     prev.classList.remove('visible');
     state.activeLayer = 1 - state.activeLayer;
@@ -356,11 +367,183 @@
       if (!prev.classList.contains('visible')) prev.replaceChildren();
     }, 700);
 
+    news?.start();
     const waits = [];
     if (item.durationSeconds) waits.push(sleep(item.durationSeconds * 1000));
     if (ended) waits.push(ended);
     if (!waits.length) waits.push(sleep(10_000));
     await Promise.race(waits);
+    news?.stop();
+  }
+
+  // ---------- news ----------
+
+  function el(tag, className, text) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined && text !== null) node.textContent = text; // feed text is never treated as HTML
+    return node;
+  }
+
+  function ago(iso) {
+    if (!iso) return '';
+    const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60_000);
+    if (mins < 1) return 'Just now';
+    if (mins < 60) return `${mins} min ago`;
+    const hours = Math.round(mins / 60);
+    if (hours < 24) return `${hours} hour${hours === 1 ? '' : 's'} ago`;
+    return new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+  }
+
+  const clockText = () => new Date().toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+
+  /** Load an image, resolving either way within `ms` so a slow or missing picture never stalls the loop. */
+  function loadImage(src, ms = 4000) {
+    return new Promise((resolve) => {
+      if (!src) return resolve(null);
+      const img = new Image();
+      img.decoding = 'async';
+      const done = (ok) => resolve(ok ? img : null);
+      img.onload = () => img.decode().then(() => done(true), () => done(true));
+      img.onerror = () => done(false);
+      setTimeout(() => done(img.complete && img.naturalWidth > 0), ms);
+      img.src = src;
+    });
+  }
+
+  /**
+   * Build a news slide that cycles through the item's stories.
+   * Layouts: "feature" (full-screen photo), "split" (photo beside the text), "headlines" (a list).
+   */
+  function newsSlide(item) {
+    const news = item.news || { stories: [], options: {} };
+    const o = news.options || {};
+    const stories = news.stories || [];
+    const layout = ['feature', 'split', 'headlines'].includes(o.layout) ? o.layout : 'feature';
+    const root = el('div', `news layout-${layout} theme-${o.theme === 'light' ? 'light' : 'dark'}`);
+    if (o.accent) root.style.setProperty('--accent', o.accent);
+    const perStoryMs = Math.max(3, o.secondsPerStory || 10) * 1000;
+
+    const media = el('div', 'news-media');
+    const head = el('header', 'news-head');
+    const badge = el('span', 'news-badge', 'News');
+    const source = el('span', 'news-source', news.title || item.name);
+    const clock = el('span', 'news-clock', clockText());
+    head.append(badge, source, clock);
+    const progress = el('div', 'news-progress');
+    const bars = stories.map(() => progress.appendChild(el('span', 'news-bar')).appendChild(el('i')).parentNode);
+    const body = el('div', 'news-body');
+    const list = layout === 'headlines' ? el('ol', 'news-list') : null;
+    root.append(media, head, body);
+    if (stories.length > 1) root.append(progress);
+    if (list) body.append(list);
+
+    let index = 0;
+    let timer = null;
+    let clockTimer = null;
+    let stopped = false;
+
+    function setMedia(img) {
+      // Cross-fade photos: the new one fades in over the old, which is then removed.
+      if (!img) {
+        media.classList.add('no-image');
+        for (const old of media.querySelectorAll('img')) old.classList.add('leaving');
+        setTimeout(() => media.querySelectorAll('img.leaving').forEach((n) => n.remove()), 900);
+        return;
+      }
+      media.classList.remove('no-image');
+      img.className = 'entering';
+      for (const old of media.querySelectorAll('img')) old.classList.add('leaving');
+      media.append(img);
+      requestAnimationFrame(() => requestAnimationFrame(() => img.classList.remove('entering')));
+      setTimeout(() => media.querySelectorAll('img.leaving').forEach((n) => n.remove()), 900);
+    }
+
+    function storyBlock(story, i) {
+      const block = el('article', 'news-story');
+      const meta = el('div', 'news-meta');
+      if (o.showTime !== false && story.publishedAt) meta.append(el('span', 'news-time', ago(story.publishedAt)));
+      if (stories.length > 1) meta.append(el('span', 'news-count', `${i + 1} / ${stories.length}`));
+      block.append(meta, el('h1', 'news-title', story.title));
+      if (story.summary) block.append(el('p', 'news-summary', story.summary));
+      return block;
+    }
+
+    function renderList(i) {
+      // Show a window of headlines around the current one; the current story is expanded.
+      const visible = Math.min(stories.length, 6);
+      const start = Math.min(Math.max(0, i - 1), stories.length - visible);
+      list.replaceChildren(
+        ...stories.slice(start, start + visible).map((story, k) => {
+          const n = start + k;
+          const li = el('li', n === i ? 'current' : '');
+          li.append(el('span', 'news-num', String(n + 1)));
+          const text = el('div', 'news-li-text');
+          text.append(el('div', 'news-li-title', story.title));
+          if (n === i) {
+            const extra = [];
+            if (o.showTime !== false && story.publishedAt) extra.push(ago(story.publishedAt));
+            if (story.summary) text.append(el('div', 'news-li-summary', story.summary));
+            if (extra.length) text.append(el('div', 'news-li-time', extra.join(' · ')));
+          }
+          li.append(text);
+          return li;
+        }),
+      );
+    }
+
+    async function show(i, first = false) {
+      const story = stories[i];
+      const img = await loadImage(story.image ? absolute(story.image) : null);
+      if (stopped && !first) return;
+      setMedia(img);
+      if (list) renderList(i);
+      else {
+        const block = storyBlock(story, i);
+        block.classList.add('entering');
+        for (const old of body.querySelectorAll('.news-story')) {
+          old.classList.add('leaving');
+          setTimeout(() => old.remove(), 700);
+        }
+        body.append(block);
+        requestAnimationFrame(() => requestAnimationFrame(() => block.classList.remove('entering')));
+      }
+      bars.forEach((b, k) => {
+        b.classList.toggle('done', k < i);
+        b.classList.toggle('active', k === i);
+      });
+    }
+
+    if (!stories.length) {
+      root.classList.add('news-empty');
+      body.append(el('div', 'news-waiting', 'Headlines will appear here once the feed has loaded.'));
+    }
+
+    const ready = stories.length ? show(0, true) : Promise.resolve();
+
+    return {
+      el: root,
+      ready,
+      start() {
+        // Restart the first bar's animation now that the slide is actually visible.
+        bars[0]?.classList.remove('active');
+        void root.offsetWidth;
+        bars[0]?.classList.add('active');
+        root.style.setProperty('--story-ms', `${perStoryMs}ms`);
+        clockTimer = setInterval(() => (clock.textContent = clockText()), 10_000);
+        if (stories.length < 2) return;
+        timer = setInterval(() => {
+          if (stopped || !root.isConnected) return this.stop();
+          index = (index + 1) % stories.length;
+          show(index);
+        }, perStoryMs);
+      },
+      stop() {
+        stopped = true;
+        clearInterval(timer);
+        clearInterval(clockTimer);
+      },
+    };
   }
 
   // ---------- boot ----------

@@ -9,6 +9,7 @@ import { config } from '../config.js';
 import { isForeignKeyError, query, withTransaction } from '../db.js';
 import { hub } from '../hub.js';
 import { mediaUrl } from '../manifest.js';
+import { POPULAR_FEEDS, getFeedRow, newsContent, normalizeNewsOptions, parseFeedUrl, parseOptions, refreshFeed } from '../news.js';
 import { HttpError, isUuid, normalizeCode, randomToken, sha256, uuid } from '../util.js';
 
 export const admin = express.Router();
@@ -33,6 +34,21 @@ function isOnline(row) {
   return Boolean(row.last_seen_at && Date.now() - new Date(row.last_seen_at).getTime() < config.onlineWindowSeconds * 1000);
 }
 
+function serializeNews(m) {
+  const content = newsContent(m);
+  return {
+    feedUrl: m.url,
+    feedTitle: content.feedTitle,
+    options: parseOptions(m),
+    fetchedAt: content.fetchedAt,
+    error: content.error,
+    storyCount: content.stories.length,
+    // A taste of what's on screen, for the media tile.
+    headline: content.stories[0]?.title || null,
+    image: content.stories.find((s) => s.image)?.image || null,
+  };
+}
+
 function serializeMedia(m) {
   return {
     id: m.id,
@@ -43,6 +59,7 @@ function serializeMedia(m) {
     sizeBytes: m.size_bytes === null ? null : Number(m.size_bytes),
     createdAt: m.created_at,
     usedIn: m.used_in === undefined ? undefined : Number(m.used_in),
+    news: m.kind === 'news' ? serializeNews(m) : undefined,
   };
 }
 
@@ -60,7 +77,13 @@ function serializeScreen(s) {
     nowPlaying: s.now_playing,
     // What the screen is showing right now, for the dashboard preview. null when idle or unknown.
     nowPlayingMedia: s.np_id
-      ? { id: s.np_id, name: s.np_name, kind: s.np_kind, url: mediaUrl({ id: s.np_id, kind: s.np_kind, filename: s.np_filename, url: s.np_url }) }
+      ? {
+          id: s.np_id,
+          name: s.np_name,
+          kind: s.np_kind,
+          url: mediaUrl({ id: s.np_id, kind: s.np_kind, filename: s.np_filename, url: s.np_url }),
+          news: s.np_kind === 'news' ? serializeNews({ url: s.np_url, options: s.np_options }) : undefined,
+        }
       : null,
     playerVersion: s.player_version,
     createdAt: s.created_at,
@@ -133,6 +156,67 @@ admin.post('/media/web', async (req, res) => {
     [uuid(), cleanName(req.body?.name, url.hostname), url.toString(), sha256(url.toString())],
   );
   res.status(201).json(serializeMedia({ ...rows[0], used_in: 0 }));
+});
+
+// ---------- News ----------
+
+admin.get('/news/feeds', (_req, res) => {
+  res.json(POPULAR_FEEDS);
+});
+
+/** Fetch a feed now (or reuse a copy from the last few minutes) so a bad URL is caught before it's saved. */
+async function checkFeed(feedUrl) {
+  const row = getFeedRow(feedUrl);
+  if (row?.fetched_at && Date.now() - new Date(row.fetched_at).getTime() < 5 * 60_000) return row;
+  try {
+    return (await refreshFeed(feedUrl)).row;
+  } catch (err) {
+    throw new HttpError(400, `Couldn't read that feed: ${err.message}`);
+  }
+}
+
+admin.post('/media/news', async (req, res) => {
+  const feedUrl = parseFeedUrl(req.body?.feedUrl);
+  const options = normalizeNewsOptions(req.body?.options || {});
+  const row = await checkFeed(feedUrl);
+  const { rows } = await query(
+    `INSERT INTO media (id, name, kind, url, options, checksum) VALUES ($1, $2, 'news', $3, $4, $5) RETURNING *`,
+    [uuid(), cleanName(req.body?.name, row.title || new URL(feedUrl).hostname), feedUrl, JSON.stringify(options), sha256(feedUrl)],
+  );
+  res.status(201).json(serializeMedia({ ...rows[0], used_in: 0 }));
+});
+
+/** Change a news item's feed or settings. */
+admin.put('/media/:id/news', async (req, res) => {
+  const id = param(req);
+  const { rows: found } = await query(`SELECT * FROM media WHERE id = $1 AND kind = 'news'`, [id]);
+  if (!found.length) throw new HttpError(404, 'News item not found');
+  const feedUrl = req.body?.feedUrl === undefined ? found[0].url : parseFeedUrl(req.body.feedUrl);
+  if (feedUrl !== found[0].url) await checkFeed(feedUrl);
+  const options = normalizeNewsOptions(req.body?.options || {}, parseOptions(found[0]));
+  const { rows } = await query('UPDATE media SET name = $2, url = $3, options = $4, checksum = $5 WHERE id = $1 RETURNING *', [
+    id,
+    cleanName(req.body?.name, found[0].name),
+    feedUrl,
+    JSON.stringify(options),
+    sha256(feedUrl),
+  ]);
+  await hub.notifyMedia(id);
+  res.json(serializeMedia(rows[0]));
+});
+
+/** Fetch a news item's feed right now instead of waiting for the next scheduled refresh. */
+admin.post('/media/:id/news/refresh', async (req, res) => {
+  const id = param(req);
+  const { rows } = await query(`SELECT * FROM media WHERE id = $1 AND kind = 'news'`, [id]);
+  if (!rows.length) throw new HttpError(404, 'News item not found');
+  try {
+    await refreshFeed(rows[0].url);
+  } catch (err) {
+    throw new HttpError(502, `Couldn't refresh the feed: ${err.message}`);
+  }
+  await hub.notifyMedia(id);
+  res.json(serializeMedia(rows[0]));
 });
 
 admin.patch('/media/:id', async (req, res) => {
@@ -260,7 +344,7 @@ admin.delete('/playlists/:id', async (req, res) => {
 // ---------- Screens ----------
 
 const SCREEN_SELECT = `SELECT s.*, p.name AS playlist_name,
-       np.id AS np_id, np.name AS np_name, np.kind AS np_kind, np.filename AS np_filename, np.url AS np_url
+       np.id AS np_id, np.name AS np_name, np.kind AS np_kind, np.filename AS np_filename, np.url AS np_url, np.options AS np_options
   FROM screens s
   LEFT JOIN playlists p ON p.id = s.playlist_id
   LEFT JOIN media np ON np.id = s.now_playing_media_id`;

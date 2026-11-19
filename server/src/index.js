@@ -10,6 +10,7 @@ import { admin } from './routes/admin.js';
 import { users } from './routes/users.js';
 import { player } from './routes/player.js';
 import { HttpError } from './util.js';
+import { startNewsRefresher } from './news.js';
 
 const freshInstall = migrate();
 await initAuth();
@@ -63,6 +64,12 @@ app.use((err, _req, res, _next) => {
   if (status >= 500) console.error(err);
   if (res.headersSent) return;
   res.status(status).json({ error: status >= 500 ? 'Something went wrong on the server' : err.message });
+});
+
+// Keep news feeds fresh and tell screens showing them when headlines change.
+startNewsRefresher(async (feedUrl) => {
+  const { rows } = await query(`SELECT id FROM media WHERE kind = 'news' AND url = $1`, [feedUrl]);
+  for (const r of rows) await hub.notifyMedia(r.id);
 });
 
 const server = http.createServer(app);
