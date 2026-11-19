@@ -101,6 +101,26 @@ const visibleKind = (player) =>
     await dash.click('button[type=submit]');
     await dash.waitForSelector('h1:has-text("Screens")');
 
+    // --- A fresh install comes with a "Demo" playlist (skipped against a database that has been used before)
+    const demo = await dash.evaluate(async () => {
+      const lists = await (await fetch('/api/playlists')).json();
+      const pl = lists.find((p) => p.name === 'Demo');
+      if (!pl) return null;
+      const full = await (await fetch(`/api/playlists/${pl.id}`)).json();
+      const items = (full.items || []).map((i) => i.media);
+      const files = await Promise.all(
+        items.filter((i) => i.kind === 'image').map(async (i) => (await fetch(i.url)).status),
+      );
+      return { count: items.length, web: items.filter((i) => i.kind === 'web').length, files };
+    });
+    if (demo) {
+      log(`Demo playlist is there: ${demo.count} items, ${demo.web} web pages`);
+      assert.ok(demo.count >= 4 && demo.web >= 1, 'Demo playlist has slides and web pages');
+      assert.ok(demo.files.length && demo.files.every((s) => s === 200), `Demo slides are served (${demo.files})`);
+    } else {
+      log('No Demo playlist (not a fresh install), skipping its check');
+    }
+
     // --- Upload media
     log(`Upload ${fixtures.images.length} images${fixtures.video ? ' and a video' : ''}`);
     await dash.click('a[data-nav=media]');

@@ -3,15 +3,17 @@ import fs from 'node:fs';
 import express from 'express';
 import { config } from './config.js';
 import { closeDatabase, migrate, query } from './db.js';
+import { seedDemo } from './seed.js';
 import { initAuth, login, logout, requireAdmin, sessionStatus } from './auth.js';
 import { hub } from './hub.js';
 import { admin } from './routes/admin.js';
 import { player } from './routes/player.js';
 import { HttpError } from './util.js';
 
-migrate();
+const freshInstall = migrate();
 await initAuth();
 fs.mkdirSync(config.mediaDir, { recursive: true });
+if (freshInstall) seedDemo();
 
 const app = express();
 app.disable('x-powered-by');
