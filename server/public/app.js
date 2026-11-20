@@ -64,7 +64,10 @@ function bytes(n) {
   return `${n.toFixed(i ? 1 : 0)} ${u[i]}`;
 }
 
+const Slides = window.SinewaveSlides;
+
 function preview(media) {
+  if (media.kind === 'slide') return Slides.toHTML(media.slide);
   if (media.kind === 'image') return `<img src="${esc(media.url)}" alt="" loading="lazy">`;
   if (media.kind === 'video') return `<video src="${esc(media.url)}#t=1" muted preload="metadata"></video>`;
   if (media.kind === 'news') {
@@ -80,13 +83,15 @@ function preview(media) {
 function defaultDuration(m) {
   if (m.kind === 'video') return 'full';
   if (m.kind === 'web') return 30;
+  if (m.kind === 'slide') return 10;
   if (m.kind === 'news') return Math.max(1, m.news?.storyCount || 0) * (m.news?.options?.secondsPerStory || 10);
   return 10;
 }
 
 /** Show a modal built from HTML. Resolves with the submitted form's data, or null if cancelled. */
-function modal(html, { onOpen, wide = false } = {}) {
-  dialog.classList.toggle('wide', wide);
+function modal(html, { onOpen, wide = false, xwide = false } = {}) {
+  dialog.classList.toggle('wide', wide || xwide);
+  dialog.classList.toggle('xwide', xwide);
   dialog.innerHTML = `<form method="dialog">${html}</form>`;
   const form = dialog.querySelector('form');
   return new Promise((resolve) => {
@@ -233,14 +238,17 @@ function screenPreview(s) {
   }
   if (m.kind === 'image') return `<img src="${esc(m.url)}" alt="">`;
   if (m.kind === 'video') return `<video src="${esc(m.url)}" muted autoplay loop playsinline preload="auto"></video>`;
-  if (m.kind === 'news') return preview(m);
+  if (m.kind === 'news' || m.kind === 'slide') return preview(m);
   // A dashboard shown inside a preview would preview itself forever; stop at one level.
   if (window.top !== window) return `<div class="preview-empty"><span>🌐 ${esc(m.name)}</span></div>`;
   return `<iframe src="${esc(m.url)}" tabindex="-1" loading="lazy" sandbox="allow-scripts allow-same-origin" referrerpolicy="no-referrer" allow="autoplay 'none'" title="${esc(m.name)}"></iframe>`;
 }
 
 /** Key that changes only when the preview content changes, so we don't restart videos every poll. */
-const previewKey = (s) => (s.nowPlayingMedia ? `${s.nowPlayingMedia.id}|${s.nowPlayingMedia.url}` : `none|${!!s.playlistId}|${s.online}`);
+const previewKey = (s) =>
+  s.nowPlayingMedia
+    ? `${s.nowPlayingMedia.id}|${s.nowPlayingMedia.url}|${s.nowPlayingMedia.slide ? JSON.stringify(s.nowPlayingMedia.slide) : ''}`
+    : `none|${!!s.playlistId}|${s.online}`;
 
 function screenCard(s) {
   const el = document.createElement('article');
@@ -434,8 +442,9 @@ async function pairScreen() {
 async function mediaPage() {
   view.innerHTML = `
     <div class="page-head">
-      <div><h1>Media</h1><div class="sub">Images, videos, web pages and news to put in playlists</div></div>
+      <div><h1>Media</h1><div class="sub">Images, videos, slides, web pages and news to put in playlists</div></div>
       <div class="actions">
+        <button class="btn" id="add-slide">+ Slide</button>
         <button class="btn" id="add-news">+ News</button>
         <button class="btn" id="add-web">+ Web page</button>
         <label class="btn primary" style="flex-direction:row">+ Upload<input type="file" id="file" multiple accept="image/*,video/*" hidden></label>
@@ -448,7 +457,7 @@ async function mediaPage() {
     const media = await api('/media');
     const box = document.getElementById('media');
     if (!media.length) {
-      box.innerHTML = `<div class="card empty"><strong>No media yet</strong>Upload images or videos, or add a web page or news feed.</div>`;
+      box.innerHTML = `<div class="card empty"><strong>No media yet</strong>Upload images or videos, make a slide, or add a web page or news feed.</div>`;
       return;
     }
     box.innerHTML = `<div class="grid">${media
@@ -458,7 +467,13 @@ async function mediaPage() {
         <div class="tile-body"><div class="tile-name" title="${esc(m.name)}">${esc(m.name)}</div>
           <div class="muted">${mediaDetail(m)}${m.usedIn ? ` · in ${m.usedIn} playlist${m.usedIn > 1 ? 's' : ''}` : ''}</div>
           ${m.news?.error ? `<div class="muted" style="color:var(--warn)" title="${esc(m.news.error)}">⚠ Last update failed</div>` : ''}</div>
-        <div class="tile-foot">${m.kind === 'news' ? '<button class="link" data-act="news">Settings</button>' : '<button class="link" data-act="rename">Rename</button>'}<button class="link" data-act="delete" style="color:var(--danger)">Delete</button></div>
+        <div class="tile-foot">${
+          m.kind === 'news'
+            ? '<button class="link" data-act="news">Settings</button>'
+            : m.kind === 'slide'
+              ? '<button class="link" data-act="slide">Edit</button><button class="link" data-act="duplicate">Duplicate</button>'
+              : '<button class="link" data-act="rename">Rename</button>'
+        }<button class="link" data-act="delete" style="color:var(--danger)">Delete</button></div>
       </div>`,
       )
       .join('')}</div>`;
@@ -505,6 +520,10 @@ async function mediaPage() {
     uploadFiles([...e.dataTransfer.files]);
   };
 
+  document.getElementById('add-slide').onclick = async () => {
+    if (await slideDialog()) render();
+  };
+
   document.getElementById('add-news').onclick = async () => {
     if (await newsDialog()) render();
   };
@@ -534,6 +553,17 @@ async function mediaPage() {
         if (await newsDialog(media)) render();
         return;
       }
+      if (btn.dataset.act === 'slide' || btn.dataset.act === 'duplicate') {
+        const media = (await api('/media')).find((m) => m.id === id);
+        if (!media) return render();
+        if (btn.dataset.act === 'slide') {
+          if (await slideDialog(media)) render();
+          return;
+        }
+        await api('/media/slide', { method: 'POST', body: { name: `${media.name} (copy)`, options: media.slide } });
+        toast('Slide duplicated');
+        return render();
+      }
       if (btn.dataset.act === 'rename') {
         const res = await modal(`
           <div class="dlg-body form"><h2>Rename</h2><label>Name <input name="name" value="${esc(name)}" required maxlength="200"></label></div>
@@ -541,7 +571,9 @@ async function mediaPage() {
         if (!res) return;
         await api(`/media/${id}`, { method: 'PATCH', body: res });
       } else {
-        if (!(await confirmModal(`Delete ${name}?`, 'It will also be removed from every playlist that uses it.'))) return;
+        const isImage = tile.querySelector('.badge')?.textContent === 'image';
+        const note = isImage ? ' Slides that use this picture will show without it.' : '';
+        if (!(await confirmModal(`Delete ${name}?`, `It will also be removed from every playlist that uses it.${note}`))) return;
         await api(`/media/${id}`, { method: 'DELETE' });
         toast('Deleted');
       }
@@ -555,6 +587,7 @@ async function mediaPage() {
 }
 
 function mediaDetail(m) {
+  if (m.kind === 'slide') return `${esc(Slides.template(m.slide?.template).name)} slide`;
   if (m.kind === 'web') return esc(new URL(m.url).hostname);
   if (m.kind === 'news') {
     const n = m.news || {};
@@ -700,6 +733,186 @@ async function newsDialog(media = null) {
     },
   });
   if (res) toast(media ? 'News settings saved' : `Added ${res.name}`);
+  return res;
+}
+
+// ---------- slides ----------
+
+/**
+ * Make a slide, or edit one (pass the media). Pick a template and a background, fill in the
+ * text, and optionally add a picture. A live preview shows exactly what screens will show.
+ * Resolves with the saved media, or null if cancelled.
+ */
+async function slideDialog(media = null) {
+  let images = (await api('/media')).filter((m) => m.kind === 'image');
+  const start = media?.slide || { template: Slides.TEMPLATES[0].id };
+  const s = Slides.normalize(start);
+  // Text typed so far, kept across template changes so switching doesn't lose anything.
+  const values = media ? { ...s.fields } : Slides.exampleFields(s.template);
+  let bgTouched = Boolean(media);
+  let accent = s.accent; // null means "use the background's colour"
+
+  const tplArt = (t) => Slides.toHTML({ template: t.id, background: t.background, fields: Slides.exampleFields(t.id) });
+  const picker = (name, selected, noneLabel) => `
+    <div class="pic-picker" data-picker="${name}">
+      <label class="pic-opt pic-none"><input type="radio" name="${name}" value="" ${selected ? '' : 'checked'}><span>${noneLabel}</span></label>
+      ${images
+        .map(
+          (m) => `<label class="pic-opt" title="${esc(m.name)}"><input type="radio" name="${name}" value="${m.id}" ${m.id === selected ? 'checked' : ''}>
+            <span><img src="${esc(m.url)}" alt="${esc(m.name)}" loading="lazy"></span></label>`,
+        )
+        .join('')}
+      <label class="pic-opt pic-upload" title="Upload a picture"><input type="file" accept="image/*" data-upload="${name}"><span>+ Upload</span></label>
+    </div>`;
+
+  const html = `
+    <div class="dlg-body form slide-form">
+      <h2>${media ? 'Edit slide' : 'New slide'}</h2>
+      <div class="slide-editor">
+        <div class="slide-controls">
+          <fieldset><legend>Template</legend>
+            <div class="tpl-picker">${Slides.TEMPLATES.map(
+              (t) => `<label class="tpl-opt" title="${esc(t.hint)}"><input type="radio" name="template" value="${t.id}" ${t.id === s.template ? 'checked' : ''}>
+                <span class="tpl-art">${tplArt(t)}</span><span>${esc(t.name)}</span></label>`,
+            ).join('')}</div>
+          </fieldset>
+          <fieldset><legend>Background</legend>
+            <div class="bg-picker">${[...Slides.BACKGROUNDS, Slides.IMAGE_BACKGROUND]
+              .map(
+                (b) => `<label class="bg-opt" title="${esc(b.name)}"><input type="radio" name="background" value="${b.id}" ${b.id === s.background ? 'checked' : ''}>
+                  <span class="bg-swatch${b.id === 'image' ? ' bg-image-swatch' : ''}" style="${esc(Slides.swatchStyle(b.id))}">${b.id === 'image' ? '🖼' : ''}</span><span class="bg-name">${esc(b.name)}</span></label>`,
+              )
+              .join('')}</div>
+            <div class="bg-image-pick" ${s.background === 'image' ? '' : 'hidden'}>${picker('backgroundImageId', s.backgroundImageId, 'Choose…')}</div>
+          </fieldset>
+          <fieldset><legend>Text</legend><div class="slide-fields"></div></fieldset>
+          <fieldset><legend class="image-legend"></legend>${picker('imageId', s.imageId, 'None')}</fieldset>
+          <div class="row3">
+            <label>Font <select name="font">${Slides.FONTS.map((f) => `<option value="${f.id}" ${f.id === s.font ? 'selected' : ''}>${esc(f.name)}</option>`).join('')}</select></label>
+            <label>Highlight colour <span class="accent-row"><input type="color" name="accentPick"><button type="button" class="link" data-accent-reset>Auto</button></span></label>
+            <label>Name <input name="name" maxlength="200" placeholder="Defaults to the headline" value="${esc(media?.name || '')}"></label>
+          </div>
+          <p class="form-error" hidden></p>
+        </div>
+        <div class="slide-preview-col">
+          <div class="slide-preview"></div>
+          <p class="muted">Preview at 16:9. Screens show it full screen, and it stays sharp at any size.</p>
+        </div>
+      </div>
+    </div>
+    <div class="dlg-foot">
+      <button type="button" class="btn" data-cancel>Cancel</button>
+      <button class="btn primary">${media ? 'Save' : 'Add slide'}</button>
+    </div>`;
+
+  const res = await modal(html, {
+    xwide: true,
+    onOpen: (form, done) => {
+      const fieldsBox = form.querySelector('.slide-fields');
+      const previewBox = form.querySelector('.slide-preview');
+      const accentPick = form.accentPick;
+      const checkedValue = (name) => form.querySelector(`input[name="${name}"]:checked`)?.value || '';
+      const imageUrl = (id) => images.find((m) => m.id === id)?.url || null;
+
+      function current() {
+        return Slides.normalize({
+          template: checkedValue('template'),
+          background: checkedValue('background'),
+          font: form.font.value,
+          accent,
+          imageId: checkedValue('imageId') || null,
+          backgroundImageId: checkedValue('backgroundImageId') || null,
+          fields: values,
+        });
+      }
+
+      function renderFields() {
+        const t = Slides.template(checkedValue('template'));
+        fieldsBox.innerHTML = t.fields
+          .map((f) => {
+            const attrs = `name="f-${f.key}" data-field="${f.key}" maxlength="${f.max}" placeholder="${esc(f.example || '')}"`;
+            const input = f.lines
+              ? `<textarea ${attrs} rows="${f.rows || 3}">${esc(values[f.key] || '')}</textarea>`
+              : `<input ${attrs} value="${esc(values[f.key] || '')}">`;
+            return `<label>${esc(f.label)}${input}${f.help ? `<span class="muted field-help">${esc(f.help)}</span>` : ''}</label>`;
+          })
+          .join('');
+        form.querySelector('.image-legend').textContent = t.image;
+      }
+
+      function renderPreview() {
+        const slide = current();
+        previewBox.innerHTML = Slides.toHTML({ ...slide, imageUrl: imageUrl(slide.imageId), backgroundUrl: imageUrl(slide.backgroundImageId) });
+        if (!accent) accentPick.value = Slides.background(slide.background).accent;
+        form.querySelector('.bg-image-pick').hidden = slide.background !== 'image';
+      }
+
+      form.addEventListener('change', (e) => {
+        const name = e.target.name;
+        if (name === 'template') {
+          const t = Slides.template(e.target.value);
+          // Swap example text for the new template's examples, but keep anything the user typed.
+          const examples = Object.fromEntries(Slides.TEMPLATES.flatMap((x) => x.fields.map((f) => [`${x.id}.${f.key}`, f.example])));
+          const isExample = (key) => !values[key] || Slides.TEMPLATES.some((x) => examples[`${x.id}.${key}`] === values[key]);
+          for (const f of t.fields) if (isExample(f.key)) values[f.key] = f.example || '';
+          if (!bgTouched) form.querySelector(`input[name=background][value="${t.background}"]`).checked = true;
+          renderFields();
+        }
+        if (name === 'background') bgTouched = true;
+        renderPreview();
+      });
+      form.addEventListener('input', (e) => {
+        if (e.target.dataset.field) values[e.target.dataset.field] = e.target.value;
+        if (e.target === accentPick) accent = accentPick.value;
+        renderPreview();
+      });
+      form.querySelector('[data-accent-reset]').addEventListener('click', () => {
+        accent = null;
+        renderPreview();
+      });
+
+      // Upload a picture from inside the editor; it lands in Media like any other upload.
+      form.addEventListener('change', async (e) => {
+        const target = e.target.dataset.upload;
+        if (!target || !e.target.files.length) return;
+        const label = e.target.closest('.pic-upload').querySelector('span');
+        label.textContent = 'Uploading…';
+        try {
+          const body = new FormData();
+          body.append('files', e.target.files[0]);
+          const [created] = await api('/media', { method: 'POST', form: body });
+          images = [created, ...images];
+          for (const p of form.querySelectorAll('[data-picker]')) {
+            const opt = document.createElement('label');
+            opt.className = 'pic-opt';
+            opt.title = created.name;
+            opt.innerHTML = `<input type="radio" name="${p.dataset.picker}" value="${created.id}"><span><img src="${esc(created.url)}" alt="${esc(created.name)}"></span>`;
+            p.querySelector('.pic-none').after(opt);
+          }
+          form.querySelector(`input[name="${target}"][value="${created.id}"]`).checked = true;
+          renderPreview();
+        } catch (err) {
+          fail(err);
+        } finally {
+          label.textContent = '+ Upload';
+          e.target.value = '';
+        }
+      });
+
+      submitInDialog(async (data) => {
+        const options = current();
+        if (options.background === 'image' && !options.backgroundImageId) throw new Error('Choose a picture for the background, or pick another background');
+        const body = { name: data.name, options };
+        return media
+          ? await api(`/media/${media.id}/slide`, { method: 'PUT', body })
+          : await api('/media/slide', { method: 'POST', body });
+      })(form, done);
+
+      renderFields();
+      renderPreview();
+    },
+  });
+  if (res) toast(media ? 'Slide saved. Screens showing it update right away.' : `Added ${res.name}`);
   return res;
 }
 

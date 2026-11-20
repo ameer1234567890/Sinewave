@@ -1,6 +1,7 @@
 import { query } from './db.js';
 import { sha256 } from './util.js';
 import { newsContent, newsDefaultSeconds } from './news.js';
+import { DEFAULT_SLIDE_SECONDS, slideContent } from './slides.js';
 
 export const DEFAULT_IMAGE_SECONDS = 10;
 export const DEFAULT_WEB_SECONDS = 30;
@@ -8,6 +9,8 @@ export const DEFAULT_WEB_SECONDS = 30;
 export function mediaUrl(media) {
   // Web pages and news items point at their external page or feed.
   if (media.kind === 'web' || media.kind === 'news') return media.url;
+  // Slides are drawn by the player from their settings; there is no file.
+  if (media.kind === 'slide') return null;
   return `/media/${media.id}/${encodeURIComponent(media.filename)}`;
 }
 
@@ -57,6 +60,15 @@ export async function buildManifest(screen) {
             item.durationSeconds = r.duration_seconds ?? newsDefaultSeconds(news);
             delete news.fetchedAt; // changes on every refresh; keep it out of the version
             delete news.error;
+          }
+          if (r.kind === 'slide') {
+            // The settings travel in the manifest; the player draws the slide itself, so it works offline.
+            // Pictures are listed as assets so the player caches them.
+            const slide = slideContent(r);
+            item.slide = slide;
+            item.checksum = sha256(JSON.stringify(slide));
+            item.assets = [slide.imageUrl, slide.backgroundUrl].filter(Boolean);
+            item.durationSeconds = r.duration_seconds ?? DEFAULT_SLIDE_SECONDS;
           }
           return item;
         }),

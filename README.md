@@ -18,6 +18,7 @@ Sinewave aims to make it simple to run digital signage on ordinary hardware: bui
 ## What works today
 
 - **Dashboard** to upload images and videos, add web pages, and build playlists (ordering and per-item durations).
+- **Slides**: make a slide right in the dashboard. Pick a template (announcement, welcome, event, menu or list, big message), pick one of the built-in backgrounds or use your own picture, type your text and add a logo or photo if you like. A live preview shows exactly what screens will show, and edits reach screens straight away. Slides are drawn by the player, so they are sharp at any resolution, fit portrait screens too, and work offline.
 - **News**: add headlines from popular feeds (BBC, Sky, The Guardian and more) or any RSS or Atom URL, shown as a full-screen slide that rotates through the stories. Pick a layout (feature photo, split, or a headlines list), light or dark theme, accent colour, number of stories and time per story. Feeds are fetched by the server every 15 minutes, and screens keep the latest stories and photos for offline playback.
 - **Screen pairing**: open the player on a display, it shows a 6-character code, and you type that code into the dashboard.
 - **Live updates**: each player keeps a WebSocket open, so a saved playlist shows up on screen in well under a second. Polling covers the gaps if the socket drops.
@@ -30,6 +31,8 @@ Sinewave aims to make it simple to run digital signage on ordinary hardware: bui
 | ![](docs/images/dashboard-playlist-editor.png) | ![](docs/images/player-pairing-code.png) | ![](docs/images/player-playing-menu.png) |
 
 ![A news slide on the player](docs/images/player-news-feature.png)
+
+![Making a slide in the dashboard](docs/images/dashboard-slide-editor.png)
 
 ## Quick start
 
@@ -155,7 +158,7 @@ npx playwright install chromium
 npm test        # BASE_URL, ADMIN_USERNAME and ADMIN_PASSWORD can be overridden
 ```
 
-It uploads media, builds a playlist, pairs a headless player, checks that a playlist change reaches the screen live, adds a news feed (served by the test itself on port 8098, so a Docker server needs `--network host` or `FEED_HOST=host.docker.internal`), then cuts the player's network and checks it keeps playing from its cache. Screenshots are written to `e2e/screenshots/`. If `ffmpeg` is installed the test also covers video.
+It uploads media, builds a playlist, pairs a headless player, checks that a playlist change reaches the screen live, makes a slide from a template, adds a news feed (served by the test itself on port 8098, so a Docker server needs `--network host` or `FEED_HOST=host.docker.internal`), then cuts the player's network and checks it keeps playing from its cache. Screenshots are written to `e2e/screenshots/`. If `ffmpeg` is installed the test also covers video.
 
 ## Status
 

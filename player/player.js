@@ -12,7 +12,7 @@
 (() => {
   'use strict';
 
-  const PLAYER_VERSION = '0.2.0';
+  const PLAYER_VERSION = '0.3.0';
   const MEDIA_CACHE = 'sinewave-media-v1';
   const POLL_CONNECTED_MS = 5 * 60_000; // safety net while the socket is up
   const POLL_DISCONNECTED_MS = 30_000; // fallback while the socket is down
@@ -202,7 +202,9 @@
     const prevItems = previous?.playlist?.items || [];
     const current = prevItems[state.index];
     // A news item whose look changed counts as changed; new headlines just wait for the next loop.
-    const sameLook = (a, b) => JSON.stringify(a.news?.options) === JSON.stringify(b.news?.options);
+    // An edited slide is shown again straight away.
+    const sameLook = (a, b) =>
+      JSON.stringify(a.news?.options) === JSON.stringify(b.news?.options) && JSON.stringify(a.slide) === JSON.stringify(b.slide);
     const currentStillThere = current && items.some((i) => i.id === current.id && i.url === current.url && sameLook(i, current));
     if (!currentStillThere || previous?.playlist?.id !== manifest.playlist?.id) {
       // What's on screen was removed or the playlist was swapped: switch right away.
@@ -316,7 +318,7 @@
     const next = layers[1 - state.activeLayer];
     const prev = layers[state.activeLayer];
     next.replaceChildren();
-    const src = item.kind === 'web' ? item.url : absolute(item.url);
+    const src = item.kind === 'web' ? item.url : item.url ? absolute(item.url) : null;
     let el;
     let ended;
     let news;
@@ -354,6 +356,11 @@
       el = news.el;
       next.append(el);
       await news.ready;
+    } else if (item.kind === 'slide') {
+      el = slideElement(item);
+      next.append(el);
+      // Wait for any pictures (from the offline cache when there is one), but never for long.
+      await Promise.all([...el.querySelectorAll('img')].map((img) => loadImage(img.src, 4000)));
     } else {
       throw new Error(`unknown kind ${item.kind}`);
     }
@@ -374,6 +381,18 @@
     if (!waits.length) waits.push(sleep(10_000));
     await Promise.race(waits);
     news?.stop();
+  }
+
+  // ---------- slides ----------
+
+  /** Draw a slide made in the dashboard. slides.js builds it from the template and text. */
+  function slideElement(item) {
+    const slide = { ...item.slide };
+    if (slide.imageUrl) slide.imageUrl = absolute(slide.imageUrl);
+    if (slide.backgroundUrl) slide.backgroundUrl = absolute(slide.backgroundUrl);
+    const wrap = document.createElement('div');
+    wrap.innerHTML = window.SinewaveSlides.toHTML(slide); // all text is escaped by toHTML
+    return wrap.firstElementChild;
   }
 
   // ---------- news ----------
