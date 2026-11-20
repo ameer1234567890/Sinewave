@@ -12,9 +12,12 @@ CREATE TABLE media_new (
   size_bytes   INTEGER,
   checksum     TEXT,           -- sha256 of file content (or of the settings, for slides)
   options      TEXT,           -- JSON settings (news: layout, theme, timing; slide: template, background, text)
+  preview      TEXT,           -- web pages: screenshot file name inside the item's media folder
+  preview_at   TEXT,           -- web pages: when the screenshot was captured
+  preview_error TEXT,          -- web pages: why the last capture failed
   created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
-INSERT INTO media_new (id, name, kind, mime_type, filename, url, size_bytes, checksum, options, created_at)
-  SELECT id, name, kind, mime_type, filename, url, size_bytes, checksum, options, created_at FROM media;
+INSERT INTO media_new (id, name, kind, mime_type, filename, url, size_bytes, checksum, options, preview, preview_at, preview_error, created_at)
+  SELECT id, name, kind, mime_type, filename, url, size_bytes, checksum, options, preview, preview_at, preview_error, created_at FROM media;
 DROP TABLE media;
 ALTER TABLE media_new RENAME TO media;

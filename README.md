@@ -19,6 +19,7 @@ Sinewave aims to make it simple to run digital signage on ordinary hardware: bui
 
 - **Dashboard** to upload images and videos, add web pages, and build playlists (ordering and per-item durations).
 - **Slides**: make a slide right in the dashboard. Pick a template (announcement, welcome, event, menu or list, big message), pick one of the built-in backgrounds or use your own picture, type your text and add a logo or photo if you like. A live preview shows exactly what screens will show, and edits reach screens straight away. Slides are drawn by the player, so they are sharp at any resolution, fit portrait screens too, and work offline.
+- **Web page previews**: when you add a web page, the server takes a small screenshot of it with headless Chromium (bundled in the Docker image) and shows it on the media card, so you can tell pages apart at a glance. If a screenshot isn't possible, it uses the picture the page offers for link previews. **Refresh preview** on the card takes a new one.
 - **News**: add headlines from popular feeds (BBC, Sky, The Guardian and more) or any RSS or Atom URL, shown as a full-screen slide that rotates through the stories. Pick a layout (feature photo, split, or a headlines list), light or dark theme, accent colour, number of stories and time per story. Feeds are fetched by the server every 15 minutes, and screens keep the latest stories and photos for offline playback.
 - **Screen pairing**: open the player on a display, it shows a 6-character code, and you type that code into the dashboard.
 - **Live updates**: each player keeps a WebSocket open, so a saved playlist shows up on screen in well under a second. Polling covers the gaps if the socket drops.
@@ -109,6 +110,7 @@ Browsers only allow service workers, and so offline caching, on **HTTPS** or **l
 | `MAX_UPLOAD_MB` | `1024` | Largest file you can upload. |
 | `SECURE_COOKIES` | `false` | Mark the session cookie `Secure` (set when using HTTPS). |
 | `NEWS_REFRESH_MINUTES` | `15` | How often news feeds are re-fetched. |
+| `WEB_PREVIEW_SCREENSHOTS` | `true` | Set to `false` to skip Chromium screenshots and only use a page's own preview picture (saves memory on very small devices). |
 | `TRUST_PROXY` | `false` | Trust `X-Forwarded-*` headers from a reverse proxy. |
 | `PUID` / `PGID` | `1000` / `1000` | User and group that own `/data` and run the server. The container fixes ownership of `/data` at startup, so a host folder mounted there just works. On Unraid use `99` / `100`. |
 
