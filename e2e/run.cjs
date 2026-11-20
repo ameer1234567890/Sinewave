@@ -363,6 +363,56 @@ const visibleKind = (player) =>
     await player.waitForTimeout(1200);
     await shot(player, '15-player-news-headlines');
 
+    // --- Slides: made in the dashboard from a template
+    const slideName = `Quiz slide ${RUN}`;
+    const slideTitle = `Quiz Night ${RUN}`;
+    log('Make a slide from the Event template with a picture, and see the live preview');
+    await dash.click('a[data-nav=media]');
+    await dash.click('#add-slide');
+    await dash.waitForSelector('dialog .slide-preview .sw-slide');
+    await dash.click('dialog .tpl-opt:has(input[value=event])');
+    await dash.waitForSelector('dialog .slide-preview .sw-t-event');
+    await dash.fill('dialog [data-field=title]', slideTitle);
+    await dash.fill('dialog [data-field=date]', 'Friday 12 June');
+    await dash.click('dialog [data-picker=imageId] .pic-opt[title="welcome"]');
+    await dash.click('dialog .bg-opt:has(input[value=ocean])');
+    await dash.fill('dialog input[name=name]', slideName);
+    await waitFor(() => dash.evaluate((t) => {
+      const p = document.querySelector('dialog .slide-preview');
+      return p.querySelector('.sw-title')?.textContent === t && Boolean(p.querySelector('.sw-img img'));
+    }, slideTitle), { what: 'editor preview' });
+    await shot(dash, '17-dashboard-slide-editor');
+    await dash.click('dialog button.primary');
+    await dash.waitForSelector(`.tile:has(.tile-name[title="${slideName}"]) .thumb .sw-slide`);
+    assert.match(await dash.textContent(`.tile:has(.tile-name[title="${slideName}"])`), /Event slide/);
+
+    log('Put the slide in the playlist: the screen draws it, picture and all');
+    await dash.click('a[data-nav=playlists]');
+    await dash.click(`a:has-text("${plName}")`);
+    await dash.waitForSelector('#items .item');
+    while ((await dash.locator('#items [data-remove]').count()) > 0) await dash.locator('#items [data-remove]').first().click();
+    await add(slideName);
+    await dash.click('#save');
+    const slideOnScreen = () =>
+      player.evaluate(() => {
+        const el = document.querySelector('.layer.visible .sw-slide');
+        const img = el?.querySelector('.sw-img img');
+        return el ? { title: el.querySelector('.sw-title')?.textContent, img: Boolean(img && img.complete && img.naturalWidth > 0) } : null;
+      });
+    await waitFor(async () => (await slideOnScreen())?.title === slideTitle, { what: 'slide on screen', timeout: 8000 });
+    await waitFor(async () => (await slideOnScreen())?.img, { what: 'slide picture' });
+    await player.waitForTimeout(800);
+    await shot(player, '18-player-slide');
+
+    log('Edit the slide text and the screen updates straight away');
+    await dash.click('a[data-nav=media]');
+    await dash.click(`.tile:has(.tile-name[title="${slideName}"]) [data-act=slide]`);
+    await dash.waitForSelector('dialog .slide-preview .sw-t-event');
+    await dash.fill('dialog [data-field=title]', `${slideTitle} is back`);
+    await dash.click('dialog button.primary');
+    await dash.waitForSelector('dialog', { state: 'hidden' });
+    await waitFor(async () => (await slideOnScreen())?.title === `${slideTitle} is back`, { what: 'edited slide', timeout: 8000 });
+
     // Put the longer loop back for the offline test.
     while ((await dash.locator('#items [data-remove]').count()) > 0) await dash.locator('#items [data-remove]').first().click();
     await dash.click('a[data-nav=playlists]');
@@ -372,14 +422,16 @@ const visibleKind = (player) =>
     await add('welcome');
     await add('menu');
     await add(newsName);
+    await add(slideName);
     if (fixtures.video) await add('countdown');
     for (let i = 0; i < 2; i++) await dash.locator('[data-dur]').nth(i).fill('3');
     await dash.locator('[data-dur]').nth(2).fill('4');
+    await dash.locator('[data-dur]').nth(3).fill('3');
     await dash.click('#save');
-    await waitFor(async () => ['welcome', 'menu', newsName].includes(await playing(player)), { what: 'restored loop' });
+    await waitFor(async () => ['welcome', 'menu', newsName, slideName].includes(await playing(player)), { what: 'restored loop' });
 
     // --- Offline: everything cached, then cut the network and restart the player
-    const loopLength = fixtures.video ? 4 : 3;
+    const loopLength = fixtures.video ? 5 : 4;
     await waitFor(() => player.evaluate((n) => window.sinewavePlayer.state.manifest?.playlist?.items.length === n, loopLength), {
       what: 'restored loop in the manifest',
     });
@@ -388,7 +440,8 @@ const visibleKind = (player) =>
       () => player.evaluate(async () => {
         const keys = await (await caches.open('sinewave-media-v1')).keys();
         const items = window.sinewavePlayer.state.manifest.playlist.items;
-        const want = items.filter((i) => i.cacheable).length + items.reduce((n, i) => n + (i.assets || []).length, 0);
+        // A slide's picture can also be an item of its own, so count each file once.
+        const want = new Set(items.flatMap((i) => [...(i.cacheable ? [i.url] : []), ...(i.assets || [])])).size;
         return keys.length >= want && keys.length;
       }),
       { what: 'media cached' },
@@ -403,10 +456,10 @@ const visibleKind = (player) =>
     log('Go offline and reload the player: it should boot and keep playing from cache');
     await playerCtx.setOffline(true);
     await player.reload();
-    await waitFor(async () => ['welcome', 'menu', 'countdown', newsName].includes(await playing(player)), { what: 'offline playback' });
+    await waitFor(async () => ['welcome', 'menu', 'countdown', newsName, slideName].includes(await playing(player)), { what: 'offline playback' });
     await waitFor(async () => (await visibleKind(player)) !== null, { what: 'visible media' });
     const seen = new Set();
-    const end = Date.now() + (fixtures.video ? 18000 : 12000);
+    const end = Date.now() + (fixtures.video ? 21000 : 15000);
     while (Date.now() < end) {
       const n = await playing(player);
       if (n && !seen.has(n)) {
@@ -422,6 +475,10 @@ const visibleKind = (player) =>
           assert.ok(ok, 'news slide shows headline and photo offline');
           await shot(player, '16-player-news-offline');
         }
+        if (n === slideName) {
+          const s = await slideOnScreen();
+          assert.ok(s?.title && s.img, 'slide shows its text and picture offline');
+        }
         if (n === 'countdown') {
           const ok = await player.evaluate(() => {
             const v = document.querySelector('.layer.visible video');
@@ -435,6 +492,7 @@ const visibleKind = (player) =>
     console.log(`    played offline: ${[...seen].join(', ')}`);
     assert.ok(seen.has('welcome') && seen.has('menu'), 'both slides played while offline');
     assert.ok(seen.has(newsName), 'news played while offline');
+    assert.ok(seen.has(slideName), 'slide played while offline');
     if (fixtures.video) assert.ok(seen.has('countdown'), 'video played while offline');
 
     log('Dashboard notices the screen went offline');

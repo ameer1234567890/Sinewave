@@ -1,0 +1,115 @@
+/*
+ * Sinewave slides (see slides.js). Everything inside a slide is sized in cqmin, a hundredth of
+ * the slide's shorter side, so the same slide looks the same full screen and as a thumbnail.
+ */
+.sw-slide {
+  position: absolute; inset: 0; overflow: hidden;
+  container-type: size;
+  --accent: #8fa8ff;
+  --fg: #fff; --muted: rgba(255, 255, 255, 0.8); --soft: rgba(255, 255, 255, 0.12); --line: rgba(255, 255, 255, 0.28);
+  color: var(--fg); text-align: left;
+  -webkit-font-smoothing: antialiased;
+}
+.sw-slide.sw-light { --fg: #17191f; --muted: rgba(23, 25, 31, 0.74); --soft: rgba(23, 25, 31, 0.07); --line: rgba(23, 25, 31, 0.25); }
+.sw-slide *, .sw-slide *::before, .sw-slide *::after { box-sizing: border-box; }
+
+.sw-inner {
+  position: absolute; inset: 0; padding: 8cqmin 9cqmin;
+  display: flex; gap: 6cqmin; align-items: center;
+}
+.sw-main { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 3cqmin; }
+.sw-center {
+  flex: 1; min-width: 0; height: 100%;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 2.6cqmin;
+}
+
+.sw-label {
+  font-size: 3.3cqmin; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent);
+}
+.sw-title {
+  font-size: 10cqmin; font-weight: 800; line-height: 1.04; letter-spacing: -0.02em;
+  overflow-wrap: anywhere; text-wrap: balance;
+}
+.sw-subtitle { font-size: 4.4cqmin; font-weight: 500; line-height: 1.25; color: var(--muted); overflow-wrap: anywhere; }
+.sw-message { font-size: 4.2cqmin; line-height: 1.4; color: var(--muted); max-width: 80ch; overflow-wrap: anywhere; text-wrap: pretty; }
+.sw-footer {
+  position: absolute; left: 9cqmin; right: 9cqmin; bottom: 6cqmin;
+  font-size: 2.8cqmin; font-weight: 500; color: var(--muted);
+  padding-top: 2cqmin; border-top: 0.25cqmin solid var(--line);
+}
+
+/* Pictures. */
+.sw-slide .sw-img img { display: block; width: 100%; height: 100%; background: none; border-radius: 0; }
+.sw-side {
+  flex: 0 0 42%; align-self: stretch; margin: 2cqmin 0;
+  border-radius: 3cqmin; overflow: hidden; box-shadow: 0 2cqmin 6cqmin rgba(0, 0, 0, 0.3);
+  background: var(--soft);
+}
+.sw-slide .sw-side img { object-fit: cover; }
+.sw-logo { height: 20cqmin; max-width: 60%; margin-bottom: 2cqmin; }
+.sw-slide .sw-logo img, .sw-slide .sw-corner img { object-fit: contain; width: auto; max-width: 100%; margin: 0 auto; }
+.sw-corner { height: 14cqmin; max-width: 30%; flex: none; }
+.sw-slide .sw-corner img { margin-right: 0; }
+.sw-avatar { width: 10cqmin; height: 10cqmin; border-radius: 50%; overflow: hidden; flex: none; box-shadow: 0 0 0 0.6cqmin var(--accent); }
+.sw-slide .sw-avatar img { object-fit: cover; }
+
+/* Announcement: room for the footer under the text. */
+.sw-t-announcement .sw-inner { padding-bottom: 14cqmin; }
+.sw-t-announcement .sw-title { margin-top: -1cqmin; }
+
+/* Welcome. */
+.sw-t-welcome .sw-title { font-size: 16cqmin; letter-spacing: -0.03em; }
+.sw-t-welcome .sw-subtitle { color: var(--fg); font-weight: 600; }
+.sw-t-welcome .sw-message {
+  margin-top: 2cqmin; padding: 1.6cqmin 3.4cqmin; border-radius: 99cqmin;
+  background: var(--soft); color: var(--fg);
+}
+.sw-t-welcome .sw-title::after {
+  content: ''; display: block; width: 12cqmin; height: 0.8cqmin; border-radius: 1cqmin;
+  background: var(--accent); margin: 3cqmin auto 0;
+}
+
+/* Event. */
+.sw-facts { display: flex; flex-wrap: wrap; gap: 1.6cqmin 2cqmin; margin: 1cqmin 0; }
+.sw-fact {
+  display: inline-flex; align-items: center; gap: 1.4cqmin;
+  font-size: 3.6cqmin; font-weight: 600; padding: 1.4cqmin 2.6cqmin 1.4cqmin 2cqmin;
+  border-radius: 99cqmin; background: var(--soft);
+}
+.sw-fact svg { width: 4cqmin; height: 4cqmin; color: var(--accent); flex: none; }
+
+/* Menu or list. */
+.sw-t-menu .sw-inner { flex-direction: column; align-items: stretch; gap: 3cqmin; padding-top: 7cqmin; padding-bottom: 5cqmin; }
+.sw-t-menu .sw-footer { position: static; margin-top: auto; flex: none; }
+.sw-menu-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 4cqmin; }
+.sw-menu-head .sw-title { font-size: 8cqmin; }
+.sw-menu-head .sw-subtitle { margin-top: 1cqmin; color: var(--accent); font-weight: 600; }
+.sw-items { list-style: none; margin: 0; padding: 0; flex: 0 1 auto; min-height: 0; overflow: hidden; }
+.sw-items.two { columns: 2; column-gap: 8cqmin; }
+.sw-items li {
+  display: flex; align-items: baseline; gap: 1.4cqmin; break-inside: avoid;
+  padding: 0.55em 0; border-bottom: 0.2cqmin solid var(--line);
+}
+.sw-items li.sw-heading {
+  border: 0; padding: 0.9em 0 0.15em; font-size: 0.78em; font-weight: 700; letter-spacing: 0.12em;
+  text-transform: uppercase; color: var(--accent);
+}
+.sw-items li.sw-heading:first-child { padding-top: 0; }
+.sw-name { font-weight: 500; overflow-wrap: anywhere; }
+.sw-dots { flex: 1; min-width: 2cqmin; border-bottom: 0.3cqmin dotted var(--line); transform: translateY(-0.3em); }
+.sw-price { font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+/* Big message. */
+.sw-t-quote .sw-center { gap: 3cqmin; padding: 0 4cqmin; }
+.sw-mark { font-size: 26cqmin; line-height: 0.6; height: 11cqmin; font-family: Georgia, serif; color: var(--accent); }
+.sw-quote { font-size: 11cqmin; font-weight: 700; line-height: 1.15; letter-spacing: -0.015em; overflow-wrap: anywhere; text-wrap: balance; }
+.sw-author { display: flex; align-items: center; gap: 2.4cqmin; font-size: 3.8cqmin; font-weight: 600; color: var(--muted); margin-top: 1cqmin; }
+.sw-author span::before { content: '— '; }
+
+/* Portrait screens: stack the picture under the text. */
+@container (max-aspect-ratio: 1/1) {
+  .sw-inner { flex-direction: column; align-items: stretch; justify-content: center; padding: 9cqmin 8cqmin 16cqmin; }
+  .sw-side { flex: 0 0 auto; height: 38cqh; margin: 0; }
+  .sw-t-menu .sw-inner { justify-content: flex-start; }
+  .sw-items.two { columns: 1; }
+}

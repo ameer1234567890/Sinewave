@@ -10,6 +10,7 @@ import { isForeignKeyError, query, withTransaction } from '../db.js';
 import { hub } from '../hub.js';
 import { mediaUrl } from '../manifest.js';
 import { POPULAR_FEEDS, getFeedRow, newsContent, normalizeNewsOptions, parseFeedUrl, parseOptions, refreshFeed } from '../news.js';
+import { normalizeSlideOptions, slideContent, slidesUsingImage } from '../slides.js';
 import { isPreviewPending, previewUrl, queuePreview } from '../webpreview.js';
 import { HttpError, isUuid, normalizeCode, randomToken, sha256, uuid } from '../util.js';
 
@@ -61,6 +62,7 @@ function serializeMedia(m) {
     createdAt: m.created_at,
     usedIn: m.used_in === undefined ? undefined : Number(m.used_in),
     news: m.kind === 'news' ? serializeNews(m) : undefined,
+    slide: m.kind === 'slide' ? slideContent(m) : undefined,
     web: m.kind === 'web' ? serializeWeb(m) : undefined,
   };
 }
@@ -94,6 +96,7 @@ function serializeScreen(s) {
           kind: s.np_kind,
           url: mediaUrl({ id: s.np_id, kind: s.np_kind, filename: s.np_filename, url: s.np_url }),
           news: s.np_kind === 'news' ? serializeNews({ url: s.np_url, options: s.np_options }) : undefined,
+          slide: s.np_kind === 'slide' ? slideContent({ options: s.np_options }) : undefined,
         }
       : null,
     playerVersion: s.player_version,
@@ -240,6 +243,40 @@ admin.post('/media/:id/news/refresh', async (req, res) => {
   res.json(serializeMedia(rows[0]));
 });
 
+// ---------- Slides ----------
+
+function slideName(req, options, fallback) {
+  const f = options.fields;
+  return cleanName(req.body?.name, fallback || f.title || f.message?.split('\n')[0] || 'New slide');
+}
+
+admin.post('/media/slide', async (req, res) => {
+  const options = normalizeSlideOptions(req.body?.options);
+  const json = JSON.stringify(options);
+  const { rows } = await query(
+    `INSERT INTO media (id, name, kind, options, checksum) VALUES ($1, $2, 'slide', $3, $4) RETURNING *`,
+    [uuid(), slideName(req, options), json, sha256(json)],
+  );
+  res.status(201).json(serializeMedia({ ...rows[0], used_in: 0 }));
+});
+
+/** Change a slide's template, background, text or pictures. Screens showing it update straight away. */
+admin.put('/media/:id/slide', async (req, res) => {
+  const id = param(req);
+  const { rows: found } = await query(`SELECT * FROM media WHERE id = $1 AND kind = 'slide'`, [id]);
+  if (!found.length) throw new HttpError(404, 'Slide not found');
+  const options = normalizeSlideOptions(req.body?.options);
+  const json = JSON.stringify(options);
+  const { rows } = await query('UPDATE media SET name = $2, options = $3, checksum = $4 WHERE id = $1 RETURNING *', [
+    id,
+    slideName(req, options, found[0].name),
+    json,
+    sha256(json),
+  ]);
+  await hub.notifyMedia(id);
+  res.json(serializeMedia(rows[0]));
+});
+
 admin.patch('/media/:id', async (req, res) => {
   const id = param(req);
   const { rows } = await query('UPDATE media SET name = $2 WHERE id = $1 RETURNING *', [id, cleanName(req.body?.name, 'Untitled')]);
@@ -264,6 +301,8 @@ admin.delete('/media/:id', async (req, res) => {
   // Uploads and web page previews both live in the item's own folder.
   await fsp.rm(path.join(config.mediaDir, id), { recursive: true, force: true });
   await hub.notifyScreens(affected.map((r) => r.id));
+  // Slides that showed this picture carry on without it.
+  if (rows[0].kind === 'image') for (const slideId of slidesUsingImage(id)) await hub.notifyMedia(slideId);
   res.status(204).end();
 });
 

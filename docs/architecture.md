@@ -32,12 +32,14 @@ SQLite comfortably handles the write load of hundreds of screens (heartbeats, st
 
 | Table | What it holds |
 | --- | --- |
-| `media` | Uploaded images and videos (file on disk plus a sha256), web page URLs, and news items (feed URL plus JSON display options). |
+| `media` | Uploaded images and videos (file on disk plus a sha256), web page URLs, news items (feed URL plus JSON display options), and slides (template, background, text and picture ids, as JSON). |
 | `news_feeds` | The last good copy of each news feed in use: title, stories (JSON), ETag, and the last error. |
 | `playlists`, `playlist_items` | Ordered items, each with an optional duration override. |
 | `screens` | Paired players: name, assigned playlist, hashed device token, last seen, now playing. |
 | `pairing_requests` | Short-lived codes shown by unpaired players. |
 | `settings` | Server-wide values, such as the session signing secret. |
+
+Slides are stored as settings, not pictures. `player/slides.js` holds the templates, the backgrounds (gradients and patterns generated in code, so there are no image files or licences to worry about) and the renderer; the player, the dashboard (for the editor preview and thumbnails) and the server (to check input) all load that one file. Slide layouts are sized with container query units, so the same slide fits a full screen, a thumbnail or a portrait display. A slide's picture is an image from Media; the manifest lists it as an asset so players cache it.
 
 News feeds are fetched by the server (no CORS problems, and one request per feed however many screens show it), every `NEWS_REFRESH_MINUTES` (15 by default), with conditional requests. Story photos are downloaded to `DATA_DIR/media/news/` and served from `/media/news/...`, so players cache them like any other file; photos no stored feed uses are deleted after a day. When a feed's stories change, screens showing it get a `content-changed` push. A feed that fails keeps its last good stories.
 
@@ -77,7 +79,7 @@ The socket also carries:
 
 `player/` is plain HTML, CSS and JS with no build step, so it can be served by the server or bundled into a native shell unchanged.
 
-- **Playback**: two stacked layers. The next item loads into the hidden layer and only fades in once it can render, so there's no flash of black between items. Images and web pages show for their duration (10s and 30s by default). Videos play to the end unless a duration is set. Videos are muted so browsers allow autoplay. News items arrive with their stories inside the manifest, and the player draws them itself (text is always set as text, never HTML), cycling through stories; by default the item shows each story once.
+- **Playback**: two stacked layers. The next item loads into the hidden layer and only fades in once it can render, so there's no flash of black between items. Images and web pages show for their duration (10s and 30s by default). Videos play to the end unless a duration is set. Videos are muted so browsers allow autoplay. News items arrive with their stories inside the manifest, and the player draws them itself (text is always set as text, never HTML), cycling through stories; by default the item shows each story once. Slides also arrive as settings in the manifest and are drawn by the player from `slides.js` (10s by default).
 - **Updates mid-loop**: if a new manifest still contains the item on screen, that item finishes and the loop carries on in the new order. If the item was removed or the playlist swapped, the player switches right away.
 - **Caching**: on each new manifest the player downloads every file into Cache Storage (`sinewave-media-v1`) before switching, then deletes files no longer used. The service worker (`sw.js`) answers `/media/...` requests from that cache, including byte-range requests, which video elements use for seeking. The player shell is network-first with a cached fallback, and the last manifest is kept in `localStorage`. Together these let a screen that reboots with no network go straight back to playing.
 - **Limits**: service workers only run on HTTPS or localhost. Browser storage quotas apply, usually a share of free disk. Web page items are always loaded live. News items play from the manifest and cached photos, so they work offline with the stories they last received.
