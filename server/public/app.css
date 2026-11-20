@@ -290,3 +290,16 @@ legend { font-weight: 500; padding: 0; margin-bottom: 6px; }
 .mini .news-thumb { padding: 3px 4px; }
 .mini .news-thumb-text { font-size: 7px; }
 .mini { position: relative; }
+
+/* Web page cards: a screenshot when there is one, otherwise the site's name. */
+.web-thumb {
+  width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+  padding: 10px; text-align: center; color: var(--muted);
+}
+.web-thumb-icon { font-size: 26px; line-height: 1; }
+.web-thumb-text { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.web-thumb.pending .web-thumb-icon { animation: web-thumb-pulse 1.2s ease-in-out infinite; }
+@keyframes web-thumb-pulse { 50% { opacity: 0.35; } }
+.mini .web-thumb { padding: 2px; gap: 0; }
+.mini .web-thumb-icon { font-size: 14px; }
+.mini .web-thumb-text { display: none; }

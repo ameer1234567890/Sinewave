@@ -73,6 +73,16 @@ function preview(media) {
       ${n.image && n.options?.showImages !== false ? `<img src="${esc(n.image)}" alt="" loading="lazy">` : ''}
       <span class="news-thumb-text">${esc(n.headline || 'Waiting for headlines…')}</span></div>`;
   }
+  if (media.kind === 'web') {
+    const w = media.web || {};
+    if (w.previewUrl) return `<img src="${esc(w.previewUrl)}" alt="" loading="lazy">`;
+    let host = '';
+    try {
+      host = new URL(media.url).hostname;
+    } catch {}
+    const note = w.previewPending ? 'Taking a picture of the page…' : host;
+    return `<div class="web-thumb${w.previewPending ? ' pending' : ''}"><span class="web-thumb-icon">🌐</span><span class="web-thumb-text">${esc(note)}</span></div>`;
+  }
   return `<span>🌐 Web page</span>`;
 }
 
@@ -444,9 +454,16 @@ async function mediaPage() {
     <div class="dropzone" id="drop">Drop images or videos here to upload<div class="progress" hidden><div></div></div></div>
     <div id="media"></div>`;
 
+  let pollTimer = null;
   const render = async () => {
+    clearTimeout(pollTimer);
     const media = await api('/media');
     const box = document.getElementById('media');
+    if (!box) return; // Left the page while loading.
+    // Web page pictures are captured in the background; check back until they're in.
+    if (media.some((m) => m.web?.previewPending)) {
+      pollTimer = setTimeout(() => document.getElementById('media') === box && render().catch(() => {}), 3000);
+    }
     if (!media.length) {
       box.innerHTML = `<div class="card empty"><strong>No media yet</strong>Upload images or videos, or add a web page or news feed.</div>`;
       return;
@@ -458,7 +475,7 @@ async function mediaPage() {
         <div class="tile-body"><div class="tile-name" title="${esc(m.name)}">${esc(m.name)}</div>
           <div class="muted">${mediaDetail(m)}${m.usedIn ? ` · in ${m.usedIn} playlist${m.usedIn > 1 ? 's' : ''}` : ''}</div>
           ${m.news?.error ? `<div class="muted" style="color:var(--warn)" title="${esc(m.news.error)}">⚠ Last update failed</div>` : ''}</div>
-        <div class="tile-foot">${m.kind === 'news' ? '<button class="link" data-act="news">Settings</button>' : '<button class="link" data-act="rename">Rename</button>'}<button class="link" data-act="delete" style="color:var(--danger)">Delete</button></div>
+        <div class="tile-foot">${m.kind === 'news' ? '<button class="link" data-act="news">Settings</button>' : '<button class="link" data-act="rename">Rename</button>'}${m.kind === 'web' ? `<button class="link" data-act="preview" title="${esc(m.web?.previewError ? `Last try failed: ${m.web.previewError}` : 'Take a new picture of the page')}">Refresh preview</button>` : ''}<button class="link" data-act="delete" style="color:var(--danger)">Delete</button></div>
       </div>`,
       )
       .join('')}</div>`;
@@ -533,6 +550,11 @@ async function mediaPage() {
         if (!media) return render();
         if (await newsDialog(media)) render();
         return;
+      }
+      if (btn.dataset.act === 'preview') {
+        await api(`/media/${id}/preview`, { method: 'POST' });
+        toast('Taking a new picture of the page');
+        return render();
       }
       if (btn.dataset.act === 'rename') {
         const res = await modal(`
