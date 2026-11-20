@@ -1,7 +1,12 @@
 # Sinewave: the CMS dashboard, API, web player and SQLite database, in one container.
 FROM node:22-alpine
 
+# Headless Chromium takes the screenshots shown on web page cards in the dashboard (server/src/webpreview.js).
+# Noto covers most scripts and emoji so pages don't render as boxes.
+RUN apk add --no-cache chromium font-noto font-noto-emoji
+
 ENV NODE_ENV=production \
+    CHROMIUM_PATH=/usr/bin/chromium \
     PORT=8080 \
     DATA_DIR=/data \
     PLAYER_DIR=/app/player \

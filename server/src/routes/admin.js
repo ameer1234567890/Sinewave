@@ -10,6 +10,7 @@ import { isForeignKeyError, query, withTransaction } from '../db.js';
 import { hub } from '../hub.js';
 import { mediaUrl } from '../manifest.js';
 import { POPULAR_FEEDS, getFeedRow, newsContent, normalizeNewsOptions, parseFeedUrl, parseOptions, refreshFeed } from '../news.js';
+import { isPreviewPending, previewUrl, queuePreview } from '../webpreview.js';
 import { HttpError, isUuid, normalizeCode, randomToken, sha256, uuid } from '../util.js';
 
 export const admin = express.Router();
@@ -60,6 +61,16 @@ function serializeMedia(m) {
     createdAt: m.created_at,
     usedIn: m.used_in === undefined ? undefined : Number(m.used_in),
     news: m.kind === 'news' ? serializeNews(m) : undefined,
+    web: m.kind === 'web' ? serializeWeb(m) : undefined,
+  };
+}
+
+function serializeWeb(m) {
+  return {
+    // A small picture of the page for the media card, or null while it's captured (pending) or if it couldn't be.
+    previewUrl: previewUrl(m),
+    previewPending: isPreviewPending(m.id),
+    previewError: m.preview ? null : m.preview_error || null,
   };
 }
 
@@ -155,7 +166,17 @@ admin.post('/media/web', async (req, res) => {
     `INSERT INTO media (id, name, kind, url, checksum) VALUES ($1, $2, 'web', $3, $4) RETURNING *`,
     [uuid(), cleanName(req.body?.name, url.hostname), url.toString(), sha256(url.toString())],
   );
+  queuePreview(rows[0].id);
   res.status(201).json(serializeMedia({ ...rows[0], used_in: 0 }));
+});
+
+/** Take a fresh picture of a web page, e.g. after the page has changed. */
+admin.post('/media/:id/preview', async (req, res) => {
+  const id = param(req);
+  const { rows } = await query(`SELECT * FROM media WHERE id = $1 AND kind = 'web'`, [id]);
+  if (!rows.length) throw new HttpError(404, 'Web page not found');
+  queuePreview(id);
+  res.status(202).json(serializeMedia(rows[0]));
 });
 
 // ---------- News ----------
@@ -240,7 +261,8 @@ admin.delete('/media/:id', async (req, res) => {
     'UPDATE playlists SET updated_at = now() WHERE id IN (SELECT DISTINCT playlist_id FROM playlist_items WHERE media_id = $1)',
     [id],
   );
-  if (rows[0].filename) await fsp.rm(path.join(config.mediaDir, id), { recursive: true, force: true });
+  // Uploads and web page previews both live in the item's own folder.
+  await fsp.rm(path.join(config.mediaDir, id), { recursive: true, force: true });
   await hub.notifyScreens(affected.map((r) => r.id));
   res.status(204).end();
 });

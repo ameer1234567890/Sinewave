@@ -11,6 +11,7 @@ import { users } from './routes/users.js';
 import { player } from './routes/player.js';
 import { HttpError } from './util.js';
 import { startNewsRefresher } from './news.js';
+import { backfillPreviews, findChromium } from './webpreview.js';
 
 const freshInstall = migrate();
 await initAuth();
@@ -71,6 +72,10 @@ startNewsRefresher(async (feedUrl) => {
   const { rows } = await query(`SELECT id FROM media WHERE kind = 'news' AND url = $1`, [feedUrl]);
   for (const r of rows) await hub.notifyMedia(r.id);
 });
+
+// Pictures for web page cards that don't have one yet (e.g. the demo pages, or pages added before previews existed).
+console.log(findChromium() ? `Web page previews: screenshots with ${findChromium()}` : 'Web page previews: share images only (Chromium not found)');
+backfillPreviews().catch((err) => console.error('Web preview backfill failed:', err));
 
 const server = http.createServer(app);
 hub.attach(server);
