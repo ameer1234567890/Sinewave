@@ -81,6 +81,8 @@ Sinewave has **one** version number for the server, the dashboard and the player
 
 Change it in both `player/version.js` and `server/package.json`. A **Version bumped** check on each pull request reminds you if you forget. If two pull requests pick the same number, the one merged second takes the next number up.
 
+When a version bump lands on `main`, the **Release** workflow tags it (`v0.5.1`, for example), publishes a [GitHub release](https://github.com/elliottmarter/Sinewave/releases) with notes listing the merged pull requests, and publishes the Docker image under that version number as well as `latest`.
+
 ## Opening a pull request
 
 1. Fork the repository and create a branch from `main` (for example `fix-video-looping`).

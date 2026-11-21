@@ -1,6 +1,7 @@
 # Builds the Sinewave image and publishes it to GitHub Container Registry.
 # - Every push to main publishes ghcr.io/<owner>/sinewave:latest (plus a sha tag).
-# - Tags like v1.2.3 also publish :1.2.3 and :1.2.
+# - Tags like v1.2.3 also publish :1.2.3 and :1.2. The Release workflow creates these tags and
+#   starts this build for each new version.
 # - Pull requests build the image to check it, without publishing.
 name: Docker image
 

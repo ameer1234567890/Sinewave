@@ -1,6 +1,6 @@
 {
   "name": "sinewave-server",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "private": true,
   "description": "CMS server for Sinewave",
   "type": "module",

@@ -1,0 +1,83 @@
+# Publishes a GitHub release for every Sinewave version.
+#
+# Every pull request bumps the version (player/version.js and server/package.json). When one of
+# those lands on main, this workflow:
+#   1. creates the git tag vX.Y.Z on the commit where that version first appeared on main,
+#   2. creates a GitHub release with notes generated from the merged pull requests,
+#   3. starts the Docker image build for the tag, which publishes ghcr.io/<owner>/sinewave:X.Y.Z
+#      and :X.Y next to :latest.
+# Versions that already have a tag are skipped, so running it again is harmless. It also fills
+# in any older versions that never got a release.
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write # create tags and releases
+  actions: write # start the Docker image build for the new tag
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history and tags, to find where each version started
+
+      - name: Tag and release new versions
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          # The version at a commit: player/version.js, or server/package.json for commits made
+          # before version.js existed.
+          version_at() {
+            local v
+            v=$(git show "$1:player/version.js" 2>/dev/null | grep -oE "'[0-9]+\.[0-9]+\.[0-9]+'" | tr -d "'" || true)
+            if [ -z "$v" ]; then
+              v=$(git show "$1:server/package.json" 2>/dev/null \
+                | grep -m1 -oE '"version": *"[0-9]+\.[0-9]+\.[0-9]+"' | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || true)
+            fi
+            echo "$v"
+          }
+
+          # Walk main oldest to newest (merge commits only) and note where each version first appears.
+          declare -A first_commit=()
+          order=()
+          for c in $(git rev-list --first-parent --reverse HEAD); do
+            v=$(version_at "$c")
+            [ -z "$v" ] && continue
+            if [ -z "${first_commit[$v]+x}" ]; then
+              first_commit[$v]=$c
+              order+=("$v")
+            fi
+          done
+
+          newest=$(printf '%s\n' "${order[@]}" | sort -V | tail -1)
+          previous=""
+          for v in "${order[@]}"; do
+            tag="v$v"
+            if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+              echo "$tag already exists, skipping."
+            else
+              echo "Releasing $tag at ${first_commit[$v]}"
+              args=(--target "${first_commit[$v]}" --title "Sinewave $v" --generate-notes)
+              [ -n "$previous" ] && args+=(--notes-start-tag "$previous")
+              if [ "$v" = "$newest" ]; then args+=(--latest); else args+=(--latest=false); fi
+              gh release create "$tag" "${args[@]}"
+              # A tag made by this workflow does not start other workflows on its own, so start
+              # the Docker build for the newest version explicitly.
+              if [ "$v" = "$newest" ]; then
+                gh workflow run docker-publish.yml --ref "$tag"
+              fi
+            fi
+            previous="$tag"
+          done
