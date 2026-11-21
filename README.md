@@ -33,7 +33,8 @@ Sinewave aims to make it simple to run digital signage on ordinary hardware: bui
 - **Live updates**: each player keeps a WebSocket open, so a saved playlist shows up on screen in well under a second. Polling covers the gaps if the socket drops.
 - **Offline playback**: the player caches its files with a service worker and keeps looping them if the network or server goes away, including after a reboot.
 - **Demo playlist**: a fresh install comes with a playlist called **Demo** (a few getting-started slides and a couple of live web pages), so a new screen has something to show straight away. Delete it whenever you like; it is only created once.
-- **Fleet status**: see which screens are online, what they are playing, and send a refresh or reload remotely.
+- **Fleet status**: see which screens are online, what they are playing, which version they run, and send a refresh or reload remotely.
+- **Version number**: the dashboard sidebar shows which Sinewave version you are running, and every screen shows it tiny and faint in the bottom-right corner (readable only up close). Turn that off with **Show version on screens** on the Screens page.
 
 | Playlist editor | Player waiting to pair | Player showing content |
 | --- | --- | --- |

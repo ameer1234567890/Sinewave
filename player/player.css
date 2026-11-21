@@ -162,3 +162,12 @@ html, body {
 @media (prefers-reduced-motion: reduce) {
   .news-media img { animation: none; }
 }
+
+/* The version label: tiny and faint so it's only readable up close. Sits above everything. */
+#version {
+  position: fixed; right: 0.6vmin; bottom: 0.4vmin; z-index: 30;
+  font: 500 max(9px, 1.1vmin)/1 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color: #fff; opacity: 0.3; mix-blend-mode: difference;
+  pointer-events: none; user-select: none;
+}
+#version[hidden] { display: none; }

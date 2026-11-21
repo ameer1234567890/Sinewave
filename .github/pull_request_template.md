@@ -12,6 +12,7 @@
 
 ## Checklist
 
+- [ ] Version bumped in `player/version.js` and `server/package.json` (new version: )
 - [ ] `cd server && npm test` passes
 - [ ] New database changes are in a new migration file
 - [ ] Docs or README updated if behaviour changed

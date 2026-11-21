@@ -369,3 +369,6 @@ dialog.xwide { width: min(1120px, calc(100vw - 32px)); }
 .integration-head h2 { margin: 0; }
 .live-fields { gap: 12px; }
 .live-fields[disabled] { opacity: 0.55; }
+/* Version setting on the Screens page, and the version in the sidebar. */
+.page-head .check { display: flex; font-size: 14px; color: var(--muted); margin-right: 8px; }
+.app-version { font-size: 12px; }

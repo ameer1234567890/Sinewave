@@ -40,6 +40,8 @@ SQLite comfortably handles the write load of hundreds of screens (heartbeats, st
 | `pairing_requests` | Short-lived codes shown by unpaired players. |
 | `settings` | Server-wide values, such as the session signing secret. |
 
+The app version lives in `player/version.js`, loaded by the player, the dashboard and the server, so all three report the same number. Players send theirs in their `status` message, and the dashboard flags a screen running an older version. The manifest carries screen-wide `display` options (today just `showVersion`, from the `settings` table), so changing one reaches every screen like a content change.
+
 Slides are stored as settings, not pictures. `player/slides.js` holds the templates, the backgrounds (gradients and patterns generated in code, so there are no image files or licences to worry about) and the renderer; the player, the dashboard (for the editor preview and thumbnails) and the server (to check input) all load that one file. Slide layouts are sized with container query units, so the same slide fits a full screen, a thumbnail or a portrait display. A slide's picture is an image from Media; the manifest lists it as an asset so players cache it.
 
 News feeds are fetched by the server (no CORS problems, and one request per feed however many screens show it), every `NEWS_REFRESH_MINUTES` (15 by default), with conditional requests. Story photos are downloaded to `DATA_DIR/media/news/` and served from `/media/news/...`, so players cache them like any other file; photos no stored feed uses are deleted after a day. When a feed's stories change, screens showing it get a `content-changed` push. A feed that fails keeps its last good stories.

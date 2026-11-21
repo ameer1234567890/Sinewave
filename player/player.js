@@ -12,7 +12,7 @@
 (() => {
   'use strict';
 
-  const PLAYER_VERSION = '0.4.0';
+  const PLAYER_VERSION = window.SINEWAVE_VERSION || 'dev'; // from version.js
   const MEDIA_CACHE = 'sinewave-media-v1';
   const POLL_CONNECTED_MS = 5 * 60_000; // safety net while the socket is up
   const POLL_DISCONNECTED_MS = 30_000; // fallback while the socket is down
@@ -69,6 +69,13 @@
     ]
       .filter(Boolean)
       .join('\n');
+  }
+
+  /** The small version label in the corner. On unless the dashboard turned it off. */
+  function renderVersion() {
+    const el = $('version');
+    el.textContent = `v${PLAYER_VERSION}`;
+    el.hidden = state.manifest?.display?.showVersion === false;
   }
 
   function show(panel) {
@@ -129,6 +136,7 @@
     storage.removeItem('sinewave.manifest');
     state.token = null;
     state.manifest = null;
+    renderVersion();
     if (state.ws) {
       state.ws.onclose = null;
       state.ws.close();
@@ -199,6 +207,7 @@
     const previous = state.manifest;
     state.manifest = manifest;
     storage.setItem('sinewave.manifest', JSON.stringify(manifest));
+    renderVersion();
     const items = manifest.playlist?.items || [];
     const prevItems = previous?.playlist?.items || [];
     const current = prevItems[state.index];
@@ -665,6 +674,7 @@
     if (saved && !state.manifest) {
       try {
         state.manifest = JSON.parse(saved);
+        renderVersion();
         startPlayback();
       } catch {
         storage.removeItem('sinewave.manifest');
@@ -689,6 +699,7 @@
       renderDebug();
     });
     renderDebug();
+    renderVersion();
     if (!state.token) await pair();
     run();
   }
