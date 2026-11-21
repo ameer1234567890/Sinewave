@@ -168,7 +168,7 @@ Early development. The MVP above works end to end, but there is no scheduling, m
 
 ## Contributing
 
-Issues and pull requests are welcome. Please open an issue to discuss larger changes before starting work.
+Issues and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for how to run Sinewave locally, run the tests and open a pull request. Please open an issue to discuss larger changes before starting work.
 
 ## License
 
