@@ -295,6 +295,7 @@ const visibleKind = (player) =>
     // Replace the whole loop with just the "notice" slide.
     while ((await dash.locator('#items [data-remove]').count()) > 0) await dash.locator('#items [data-remove]').first().click();
     await add('notice');
+    await dash.locator('[data-dur]').first().fill('2'); // short, so the one-item check below sees it come round twice
     const pushedAt = Date.now();
     await dash.click('#save');
     await waitFor(async () => (await playing(player)) === 'notice', { what: 'pushed update', timeout: 5000 });
@@ -304,6 +305,21 @@ const visibleKind = (player) =>
     assert.equal(await player.evaluate(() => performance.getEntriesByType('navigation').length), navCount);
     await player.waitForTimeout(800);
     await shot(player, '08-player-after-live-push');
+
+    log('A playlist with one item keeps it on screen when its time is up, with no flash');
+    await player.evaluate(() => {
+      document.querySelector('.layer.visible > *').dataset.held = '1';
+      window.__layerChanges = 0;
+      const watch = new MutationObserver((m) => (window.__layerChanges += m.length));
+      document.querySelectorAll('.layer').forEach((l) => watch.observe(l, { attributes: true, attributeFilter: ['class'], childList: true }));
+    });
+    await player.waitForTimeout(4500); // two and a bit turns of a 2 second item
+    const held = await player.evaluate(() => ({
+      same: document.querySelector('.layer.visible > *')?.dataset.held === '1',
+      changes: window.__layerChanges,
+    }));
+    assert.ok(held.same, 'the same image element is still on screen');
+    assert.equal(held.changes, 0, 'no cross-fade or redraw happened');
 
     // --- News: a feed shown as a slide
     const newsName = `Headlines ${RUN}`;
