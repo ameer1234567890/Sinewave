@@ -9,8 +9,10 @@ import { hub } from './hub.js';
 import { admin } from './routes/admin.js';
 import { users } from './routes/users.js';
 import { player } from './routes/player.js';
+import { integrations, notifyTicketScreens } from './routes/integrations.js';
 import { HttpError } from './util.js';
 import { startNewsRefresher } from './news.js';
+import { startAutotaskRefresher } from './autotask.js';
 import { backfillPreviews, findChromium } from './webpreview.js';
 
 const freshInstall = migrate();
@@ -36,6 +38,7 @@ app.use('/api/player', player);
 // Everything below needs a signed-in account. Super-admin-only routes check the role themselves.
 app.use('/api', requireUser);
 app.use('/api', users);
+app.use('/api', integrations);
 app.use('/api', admin);
 app.use('/api', (_req, _res, next) => next(new HttpError(404, 'Not found')));
 
@@ -72,6 +75,9 @@ startNewsRefresher(async (feedUrl) => {
   const { rows } = await query(`SELECT id FROM media WHERE kind = 'news' AND url = $1`, [feedUrl]);
   for (const r of rows) await hub.notifyMedia(r.id);
 });
+
+// Keep ticket widgets' numbers fresh (from Autotask, or demo data until it's connected).
+startAutotaskRefresher(notifyTicketScreens);
 
 // Pictures for web page cards that don't have one yet (e.g. the demo pages, or pages added before previews existed).
 console.log(findChromium() ? `Web page previews: screenshots with ${findChromium()}` : 'Web page previews: share images only (Chromium not found)');

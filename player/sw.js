@@ -7,9 +7,9 @@
  *   during sync, including byte-range requests so cached videos can play and seek.
  * - API calls and the WebSocket are never cached.
  */
-const SHELL_CACHE = 'sinewave-shell-v2';
+const SHELL_CACHE = 'sinewave-shell-v3';
 const MEDIA_CACHE = 'sinewave-media-v1';
-const SHELL_FILES = ['./', './index.html', './player.js', './player.css', './slides.js', './slides.css', './manifest.webmanifest'];
+const SHELL_FILES = ['./', './index.html', './player.js', './player.css', './slides.js', './slides.css', './autotask.js', './autotask.css', './manifest.webmanifest'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(

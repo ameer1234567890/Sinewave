@@ -354,3 +354,18 @@ dialog.xwide { width: min(1120px, calc(100vw - 32px)); }
 .mini .web-thumb { padding: 2px; gap: 0; }
 .mini .web-thumb-icon { font-size: 14px; }
 .mini .web-thumb-text { display: none; }
+
+/* ---------- Ticket stats ---------- */
+.tickets-form fieldset legend .field-help { margin-left: 6px; }
+.tile-table { border-collapse: collapse; width: 100%; font-size: 13px; }
+.tile-table th { text-align: left; font-weight: 500; color: var(--muted); font-size: 12px; padding: 2px 6px; }
+.tile-table td { padding: 3px 6px; border-top: 1px solid var(--border); }
+.tile-table td:first-child { width: 40px; }
+.tile-table input[type=number] { width: 80px; }
+.tile-table input[type=checkbox] { width: auto; }
+.privacy { background: var(--surface-2); border-radius: 10px; padding: 10px 12px; }
+.integration-card { padding: 20px 22px; max-width: 900px; }
+.integration-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.integration-head h2 { margin: 0; }
+.live-fields { gap: 12px; }
+.live-fields[disabled] { opacity: 0.55; }

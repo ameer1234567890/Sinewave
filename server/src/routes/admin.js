@@ -11,6 +11,8 @@ import { hub } from '../hub.js';
 import { mediaUrl } from '../manifest.js';
 import { POPULAR_FEEDS, getFeedRow, newsContent, normalizeNewsOptions, parseFeedUrl, parseOptions, refreshFeed } from '../news.js';
 import { normalizeSlideOptions, slideContent, slidesUsingImage } from '../slides.js';
+import { Tickets, parseWidgetOptions, ticketContent } from '../autotask.js';
+import { ensureTicketData } from './integrations.js';
 import { isPreviewPending, previewUrl, queuePreview } from '../webpreview.js';
 import { HttpError, isUuid, normalizeCode, randomToken, sha256, uuid } from '../util.js';
 
@@ -63,6 +65,7 @@ function serializeMedia(m) {
     usedIn: m.used_in === undefined ? undefined : Number(m.used_in),
     news: m.kind === 'news' ? serializeNews(m) : undefined,
     slide: m.kind === 'slide' ? slideContent(m) : undefined,
+    autotask: m.kind === 'autotask' ? ticketContent(parseWidgetOptions(m)) : undefined,
     web: m.kind === 'web' ? serializeWeb(m) : undefined,
   };
 }
@@ -97,6 +100,7 @@ function serializeScreen(s) {
           url: mediaUrl({ id: s.np_id, kind: s.np_kind, filename: s.np_filename, url: s.np_url }),
           news: s.np_kind === 'news' ? serializeNews({ url: s.np_url, options: s.np_options }) : undefined,
           slide: s.np_kind === 'slide' ? slideContent({ options: s.np_options }) : undefined,
+          autotask: s.np_kind === 'autotask' ? ticketContent(parseWidgetOptions({ options: s.np_options })) : undefined,
         }
       : null,
     playerVersion: s.player_version,
@@ -239,6 +243,36 @@ admin.post('/media/:id/news/refresh', async (req, res) => {
   } catch (err) {
     throw new HttpError(502, `Couldn't refresh the feed: ${err.message}`);
   }
+  await hub.notifyMedia(id);
+  res.json(serializeMedia(rows[0]));
+});
+
+// ---------- Ticket widgets (Autotask) ----------
+
+admin.post('/media/autotask', async (req, res) => {
+  const options = Tickets.normalize(req.body?.options);
+  const json = JSON.stringify(options);
+  const { rows } = await query(
+    `INSERT INTO media (id, name, kind, options, checksum) VALUES ($1, $2, 'autotask', $3, $4) RETURNING *`,
+    [uuid(), cleanName(req.body?.name, options.label || 'Ticket stats'), json, sha256(json)],
+  );
+  await ensureTicketData();
+  res.status(201).json(serializeMedia({ ...rows[0], used_in: 0 }));
+});
+
+/** Change a ticket widget's layout, filters or thresholds. Screens showing it update straight away. */
+admin.put('/media/:id/autotask', async (req, res) => {
+  const id = param(req);
+  const { rows: found } = await query(`SELECT * FROM media WHERE id = $1 AND kind = 'autotask'`, [id]);
+  if (!found.length) throw new HttpError(404, 'Ticket widget not found');
+  const options = Tickets.normalize(req.body?.options, parseWidgetOptions(found[0]));
+  const json = JSON.stringify(options);
+  const { rows } = await query('UPDATE media SET name = $2, options = $3, checksum = $4 WHERE id = $1 RETURNING *', [
+    id,
+    cleanName(req.body?.name, found[0].name),
+    json,
+    sha256(json),
+  ]);
   await hub.notifyMedia(id);
   res.json(serializeMedia(rows[0]));
 });
