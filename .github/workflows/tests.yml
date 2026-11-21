@@ -30,3 +30,26 @@ jobs:
           cache-dependency-path: server/package-lock.json
       - run: npm ci
       - run: npm test
+
+  # Reminder that every pull request bumps the version (see CONTRIBUTING.md).
+  version-bump:
+    name: Version bumped
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compare with the base branch
+        run: |
+          read_version() { grep -oE "'[0-9]+\.[0-9]+\.[0-9]+'" | tr -d "'"; }
+          git fetch --depth=1 origin "${{ github.base_ref }}"
+          base=$(git show FETCH_HEAD:player/version.js 2>/dev/null | read_version || true)
+          head=$(read_version < player/version.js)
+          echo "Base: ${base:-none}  This pull request: $head"
+          if [ -n "$base" ] && [ "$base" = "$head" ]; then
+            echo "::error file=player/version.js::Bump the version in player/version.js and server/package.json (for example $base -> next number). See CONTRIBUTING.md."
+            exit 1
+          fi
+          if [ -n "$base" ] && [ "$(printf '%s\n%s\n' "$base" "$head" | sort -V | tail -1)" != "$head" ]; then
+            echo "::error file=player/version.js::The version went down ($base -> $head). It should only go up."
+            exit 1
+          fi

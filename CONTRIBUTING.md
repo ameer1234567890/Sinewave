@@ -69,10 +69,22 @@ There is no linter yet, so please match the code around you:
 - Add or update tests for behaviour you change, especially in `server/test/`.
 - Write user-facing text (dashboard labels, docs) in plain, friendly English.
 
+## Version numbers
+
+Sinewave has **one** version number for the server, the dashboard and the player. It lives in [`player/version.js`](player/version.js), and `server/package.json` repeats it (a unit test checks they match). The dashboard shows it in the sidebar, and screens show it small in a corner.
+
+**Every pull request bumps the version**, so anyone can tell which build they are running:
+
+- Bug fixes and small tweaks bump the last number: `0.4.0` → `0.4.1`.
+- New features bump the middle number and reset the last: `0.4.1` → `0.5.0`.
+- The first number stays `0` until Sinewave is ready for general use.
+
+Change it in both `player/version.js` and `server/package.json`. A **Version bumped** check on each pull request reminds you if you forget. If two pull requests pick the same number, the one merged second takes the next number up.
+
 ## Opening a pull request
 
 1. Fork the repository and create a branch from `main` (for example `fix-video-looping`).
-2. Make your change, and run `cd server && npm test`.
+2. Make your change, bump the version (see above), and run `cd server && npm test`.
 3. Open a pull request against `main`. The template will ask what changed and how you tested it. Screenshots help a lot for anything visual.
 4. Checks run automatically. If one fails, click **Details** next to it to see why, push a fix to the same branch, and the pull request updates itself.
 

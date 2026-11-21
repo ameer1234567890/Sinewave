@@ -2,6 +2,7 @@ import { query } from './db.js';
 import { sha256 } from './util.js';
 import { newsContent, newsDefaultSeconds } from './news.js';
 import { DEFAULT_SLIDE_SECONDS, slideContent } from './slides.js';
+import { showVersionOnScreens } from './version.js';
 
 export const DEFAULT_IMAGE_SECONDS = 10;
 export const DEFAULT_WEB_SECONDS = 30;
@@ -75,6 +76,8 @@ export async function buildManifest(screen) {
       };
     }
   }
-  const body = { screen: { id: screen.id, name: screen.name }, playlist };
+  // Screen-wide display options. Part of the body, so changing one updates every screen.
+  const display = { showVersion: showVersionOnScreens() };
+  const body = { screen: { id: screen.id, name: screen.name }, display, playlist };
   return { version: sha256(JSON.stringify(body)).slice(0, 16), generatedAt: new Date().toISOString(), ...body };
 }
