@@ -12,7 +12,7 @@
 (() => {
   'use strict';
 
-  const PLAYER_VERSION = '0.3.0';
+  const PLAYER_VERSION = '0.3.1';
   const MEDIA_CACHE = 'sinewave-media-v1';
   const POLL_CONNECTED_MS = 5 * 60_000; // safety net while the socket is up
   const POLL_DISCONNECTED_MS = 30_000; // fallback while the socket is down
@@ -38,6 +38,7 @@
     playToken: 0, // bumps to cancel the current playback loop
     index: -1,
     activeLayer: 0,
+    onScreen: null, // { key, el, news } for the item currently showing
     nowPlaying: null,
     nowPlayingMediaId: null,
     lastSync: null,
@@ -265,6 +266,7 @@
 
   function stopPlayback() {
     state.playToken++;
+    clearOnScreen();
     for (const layer of layers) {
       layer.classList.remove('visible');
       layer.replaceChildren();
@@ -302,6 +304,7 @@
   }
 
   function showIdle() {
+    clearOnScreen();
     for (const layer of layers) layer.classList.remove('visible');
     state.nowPlaying = null;
     state.nowPlayingMediaId = null;
@@ -313,8 +316,55 @@
     reportStatus();
   }
 
+  /**
+   * What makes an item look different on screen. When the next item has the same key as the one
+   * already showing (a playlist with a single item), it stays up instead of being drawn again.
+   */
+  const itemKey = (item) => JSON.stringify([item.id, item.url, item.checksum, item.news?.options ?? null]);
+
+  /** Forget the item on screen, stopping any timers it runs. */
+  function clearOnScreen() {
+    state.onScreen?.news?.stop();
+    state.onScreen = null;
+  }
+
+  /** Wait for the item's time on screen: its duration, the end of a video, or 10s by default. */
+  function waitOnScreen(item, ended) {
+    const waits = [];
+    if (item.durationSeconds) waits.push(sleep(item.durationSeconds * 1000));
+    if (ended) waits.push(ended);
+    if (!waits.length) waits.push(sleep(10_000));
+    return Promise.race(waits);
+  }
+
+  /**
+   * Keep the item already on screen for another turn without reloading it, so a playlist with one
+   * item never blinks. Images, slides and web pages simply stay; a video plays again from the
+   * start; a news item keeps cycling its stories. Returns false if it can't be kept.
+   */
+  async function holdItem(item) {
+    const current = state.onScreen;
+    const layer = layers[state.activeLayer];
+    if (!current || current.key !== itemKey(item) || !layer.classList.contains('visible') || !layer.contains(current.el)) {
+      return false;
+    }
+    let ended;
+    if (item.kind === 'video') {
+      const video = current.el;
+      ended = new Promise((resolve) => {
+        video.onended = resolve;
+        video.onerror = resolve;
+      });
+      video.currentTime = 0;
+      await video.play();
+    }
+    await waitOnScreen(item, ended);
+    return true;
+  }
+
   /** Put an element on the hidden layer, wait until it can render, then cross-fade to it. */
   async function playItem(item, token) {
+    if (await holdItem(item)) return;
     const next = layers[1 - state.activeLayer];
     const prev = layers[state.activeLayer];
     next.replaceChildren();
@@ -366,6 +416,8 @@
     }
 
     if (token !== state.playToken) return news?.stop();
+    clearOnScreen();
+    state.onScreen = { key: itemKey(item), el, news };
     next.classList.add('visible');
     prev.classList.remove('visible');
     state.activeLayer = 1 - state.activeLayer;
@@ -375,12 +427,8 @@
     }, 700);
 
     news?.start();
-    const waits = [];
-    if (item.durationSeconds) waits.push(sleep(item.durationSeconds * 1000));
-    if (ended) waits.push(ended);
-    if (!waits.length) waits.push(sleep(10_000));
-    await Promise.race(waits);
-    news?.stop();
+    // News keeps running after this: it stops when something else replaces it (see clearOnScreen).
+    await waitOnScreen(item, ended);
   }
 
   // ---------- slides ----------
