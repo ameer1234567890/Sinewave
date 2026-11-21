@@ -28,6 +28,7 @@ Sinewave aims to make it simple to run digital signage on ordinary hardware: bui
 - **Slides**: make a slide right in the dashboard. Pick a template (announcement, welcome, event, menu or list, big message), pick one of the built-in backgrounds or use your own picture, type your text and add a logo or photo if you like. A live preview shows exactly what screens will show, and edits reach screens straight away. Slides are drawn by the player, so they are sharp at any resolution, fit portrait screens too, and work offline.
 - **Web page previews**: when you add a web page, the server takes a small screenshot of it with headless Chromium (bundled in the Docker image) and shows it on the media card, so you can tell pages apart at a glance. If a screenshot isn't possible, it uses the picture the page offers for link previews. **Refresh preview** on the card takes a new one.
 - **News**: add headlines from popular feeds (BBC, Sky, The Guardian and more) or any RSS or Atom URL, shown as a full-screen slide that rotates through the stories. Pick a layout (feature photo, split, or a headlines list), light or dark theme, accent colour, number of stories and time per story. Feeds are fetched by the server every 15 minutes, and screens keep the latest stories and photos for offline playback.
+- **Ticket stats from Autotask**: show live service desk numbers on screens: open tickets, new and closed today, tickets per queue, SLA breaches and tickets at risk, SLA met over the last 7 days, and opened against closed for the week. Pick a layout (overview, big numbers, queue board, hot list or trend), filter by queue, status and priority, and set amber and red thresholds for each number. A **Hide private information** option leaves out company names and ticket titles for screens visitors or customers can see. A super admin connects Autotask under **Integrations** with an API user; the server checks Autotask every couple of minutes and screens only ever get the numbers, never the credentials. Until it's connected, widgets show realistic demo data.
 - **Screen pairing**: open the player on a display, it shows a 6-character code, and you type that code into the dashboard.
 - **Live updates**: each player keeps a WebSocket open, so a saved playlist shows up on screen in well under a second. Polling covers the gaps if the socket drops.
 - **Offline playback**: the player caches its files with a service worker and keeps looping them if the network or server goes away, including after a reboot.
@@ -42,6 +43,8 @@ Sinewave aims to make it simple to run digital signage on ordinary hardware: bui
 ![A news slide on the player](docs/images/player-news-feature.png)
 
 ![Making a slide in the dashboard](docs/images/dashboard-slide-editor.png)
+
+![Ticket stats from Autotask on a screen (demo data)](docs/images/player-tickets-overview.png)
 
 ## Quick start
 

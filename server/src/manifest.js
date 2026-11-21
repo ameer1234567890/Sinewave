@@ -2,6 +2,7 @@ import { query } from './db.js';
 import { sha256 } from './util.js';
 import { newsContent, newsDefaultSeconds } from './news.js';
 import { DEFAULT_SLIDE_SECONDS, slideContent } from './slides.js';
+import { DEFAULT_WIDGET_SECONDS, parseWidgetOptions, ticketContent } from './autotask.js';
 import { showVersionOnScreens } from './version.js';
 
 export const DEFAULT_IMAGE_SECONDS = 10;
@@ -11,7 +12,7 @@ export function mediaUrl(media) {
   // Web pages and news items point at their external page or feed.
   if (media.kind === 'web' || media.kind === 'news') return media.url;
   // Slides are drawn by the player from their settings; there is no file.
-  if (media.kind === 'slide') return null;
+  if (media.kind === 'slide' || media.kind === 'autotask') return null;
   return `/media/${media.id}/${encodeURIComponent(media.filename)}`;
 }
 
@@ -70,6 +71,15 @@ export async function buildManifest(screen) {
             item.checksum = sha256(JSON.stringify(slide));
             item.assets = [slide.imageUrl, slide.backgroundUrl].filter(Boolean);
             item.durationSeconds = r.duration_seconds ?? DEFAULT_SLIDE_SECONDS;
+          }
+          if (r.kind === 'autotask') {
+            // Only the numbers travel (never Autotask credentials), and the player keeps the last
+            // copy so a screen still shows them, marked as old, if the server goes away.
+            const tickets = ticketContent(parseWidgetOptions(r));
+            delete tickets.error;
+            item.autotask = tickets;
+            item.checksum = sha256(JSON.stringify(tickets));
+            item.durationSeconds = r.duration_seconds ?? DEFAULT_WIDGET_SECONDS;
           }
           return item;
         }),

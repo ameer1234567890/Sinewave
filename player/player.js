@@ -38,7 +38,7 @@
     playToken: 0, // bumps to cancel the current playback loop
     index: -1,
     activeLayer: 0,
-    onScreen: null, // { key, el, news } for the item currently showing
+    onScreen: null, // { key, el, live } for the item currently showing
     nowPlaying: null,
     nowPlayingMediaId: null,
     lastSync: null,
@@ -212,9 +212,11 @@
     const prevItems = previous?.playlist?.items || [];
     const current = prevItems[state.index];
     // A news item whose look changed counts as changed; new headlines just wait for the next loop.
-    // An edited slide is shown again straight away.
+    // An edited slide or ticket widget is shown again straight away.
     const sameLook = (a, b) =>
-      JSON.stringify(a.news?.options) === JSON.stringify(b.news?.options) && JSON.stringify(a.slide) === JSON.stringify(b.slide);
+      JSON.stringify(a.news?.options) === JSON.stringify(b.news?.options) &&
+      JSON.stringify(a.slide) === JSON.stringify(b.slide) &&
+      JSON.stringify(a.autotask?.options) === JSON.stringify(b.autotask?.options);
     const currentStillThere = current && items.some((i) => i.id === current.id && i.url === current.url && sameLook(i, current));
     if (!currentStillThere || previous?.playlist?.id !== manifest.playlist?.id) {
       // What's on screen was removed or the playlist was swapped: switch right away.
@@ -222,6 +224,9 @@
     } else {
       // Otherwise let the current item finish and continue in the new order.
       state.index = items.findIndex((i) => i.id === current.id);
+      // Fresh ticket numbers go straight onto the widget already showing, without redrawing it.
+      const fresh = items[state.index];
+      if (fresh?.autotask && state.onScreen?.key === itemKey(fresh)) state.onScreen.live?.update?.(fresh.autotask);
     }
     reportStatus();
   }
@@ -329,11 +334,14 @@
    * What makes an item look different on screen. When the next item has the same key as the one
    * already showing (a playlist with a single item), it stays up instead of being drawn again.
    */
-  const itemKey = (item) => JSON.stringify([item.id, item.url, item.checksum, item.news?.options ?? null]);
+  const itemKey = (item) =>
+    item.kind === 'autotask'
+      ? JSON.stringify([item.id, 'autotask', item.autotask?.options ?? null]) // new numbers are applied in place
+      : JSON.stringify([item.id, item.url, item.checksum, item.news?.options ?? null]);
 
   /** Forget the item on screen, stopping any timers it runs. */
   function clearOnScreen() {
-    state.onScreen?.news?.stop();
+    state.onScreen?.live?.stop();
     state.onScreen = null;
   }
 
@@ -380,7 +388,7 @@
     const src = item.kind === 'web' ? item.url : item.url ? absolute(item.url) : null;
     let el;
     let ended;
-    let news;
+    let live; // news and ticket widgets keep updating while they're on screen
 
     if (item.kind === 'image') {
       el = new Image();
@@ -411,10 +419,14 @@
       next.append(el);
       await Promise.race([new Promise((r) => (el.onload = r)), sleep(8000)]);
     } else if (item.kind === 'news') {
-      news = newsSlide(item);
-      el = news.el;
+      live = newsSlide(item);
+      el = live.el;
       next.append(el);
-      await news.ready;
+      await live.ready;
+    } else if (item.kind === 'autotask') {
+      live = ticketWidget(item);
+      el = live.el;
+      next.append(el);
     } else if (item.kind === 'slide') {
       el = slideElement(item);
       next.append(el);
@@ -424,9 +436,9 @@
       throw new Error(`unknown kind ${item.kind}`);
     }
 
-    if (token !== state.playToken) return news?.stop();
+    if (token !== state.playToken) return live?.stop();
     clearOnScreen();
-    state.onScreen = { key: itemKey(item), el, news };
+    state.onScreen = { key: itemKey(item), el, live };
     next.classList.add('visible');
     prev.classList.remove('visible');
     state.activeLayer = 1 - state.activeLayer;
@@ -435,8 +447,8 @@
       if (!prev.classList.contains('visible')) prev.replaceChildren();
     }, 700);
 
-    news?.start();
-    // News keeps running after this: it stops when something else replaces it (see clearOnScreen).
+    live?.start();
+    // News and tickets keep running after this: they stop when something else replaces them (see clearOnScreen).
     await waitOnScreen(item, ended);
   }
 
@@ -450,6 +462,38 @@
     const wrap = document.createElement('div');
     wrap.innerHTML = window.SinewaveSlides.toHTML(slide); // all text is escaped by toHTML
     return wrap.firstElementChild;
+  }
+
+  // ---------- ticket widgets ----------
+
+  /**
+   * Draw a ticket stats widget. The numbers come in the manifest (worked out on the server);
+   * autotask.js turns them into HTML. Ages, SLA countdowns and the clock tick every 15 seconds,
+   * and fresh numbers from the server are swapped in without redrawing the whole item.
+   */
+  function ticketWidget(item) {
+    const host = document.createElement('div');
+    host.className = 'at-host';
+    let content = item.autotask || {};
+    let timer = null;
+    const draw = () => {
+      host.innerHTML = window.SinewaveTickets.toHTML(content, Date.now()); // all text is escaped by toHTML
+    };
+    draw();
+    return {
+      el: host,
+      start() {
+        clearInterval(timer);
+        timer = setInterval(draw, 15_000);
+      },
+      stop() {
+        clearInterval(timer);
+      },
+      update(next) {
+        content = next;
+        draw();
+      },
+    };
   }
 
   // ---------- news ----------

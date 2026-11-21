@@ -67,9 +67,11 @@ function bytes(n) {
 }
 
 const Slides = window.SinewaveSlides;
+const Tickets = window.SinewaveTickets;
 
 function preview(media) {
   if (media.kind === 'slide') return Slides.toHTML(media.slide);
+  if (media.kind === 'autotask') return Tickets.toHTML(media.autotask);
   if (media.kind === 'image') return `<img src="${esc(media.url)}" alt="" loading="lazy">`;
   if (media.kind === 'video') return `<video src="${esc(media.url)}#t=1" muted preload="metadata"></video>`;
   if (media.kind === 'news') {
@@ -96,6 +98,7 @@ function defaultDuration(m) {
   if (m.kind === 'video') return 'full';
   if (m.kind === 'web') return 30;
   if (m.kind === 'slide') return 10;
+  if (m.kind === 'autotask') return 30;
   if (m.kind === 'news') return Math.max(1, m.news?.storyCount || 0) * (m.news?.options?.secondsPerStory || 10);
   return 10;
 }
@@ -208,6 +211,7 @@ const routes = [
   [/^#\/playlists$/, 'playlists', playlistsPage],
   [/^#\/playlists\/([0-9a-f-]+)$/, 'playlists', playlistEditor],
   [/^#\/users$/, 'users', usersPage],
+  [/^#\/integrations$/, 'integrations', integrationsPage],
 ];
 
 async function route() {
@@ -230,7 +234,7 @@ async function startApp(user) {
   document.getElementById('me-name').textContent = me.username;
   document.getElementById('me-role').textContent = ROLE_NAMES[me.role] || me.role;
   document.querySelectorAll('[data-super]').forEach((el) => (el.hidden = !isSuper()));
-  if (!isSuper() && location.hash === '#/users') location.hash = '#/screens';
+  if (!isSuper() && ['#/users', '#/integrations'].includes(location.hash)) location.hash = '#/screens';
   settings = await api('/settings').catch(() => settings);
   document.getElementById('app-version').textContent = `Sinewave v${settings.version}`;
   document.getElementById('login').hidden = true;
@@ -252,7 +256,7 @@ function screenPreview(s) {
   }
   if (m.kind === 'image') return `<img src="${esc(m.url)}" alt="">`;
   if (m.kind === 'video') return `<video src="${esc(m.url)}" muted autoplay loop playsinline preload="auto"></video>`;
-  if (m.kind === 'news' || m.kind === 'slide') return preview(m);
+  if (m.kind === 'news' || m.kind === 'slide' || m.kind === 'autotask') return preview(m);
   // A dashboard shown inside a preview would preview itself forever; stop at one level.
   if (window.top !== window) return `<div class="preview-empty"><span>🌐 ${esc(m.name)}</span></div>`;
   return `<iframe src="${esc(m.url)}" tabindex="-1" loading="lazy" sandbox="allow-scripts allow-same-origin" referrerpolicy="no-referrer" allow="autoplay 'none'" title="${esc(m.name)}"></iframe>`;
@@ -261,7 +265,7 @@ function screenPreview(s) {
 /** Key that changes only when the preview content changes, so we don't restart videos every poll. */
 const previewKey = (s) =>
   s.nowPlayingMedia
-    ? `${s.nowPlayingMedia.id}|${s.nowPlayingMedia.url}|${s.nowPlayingMedia.slide ? JSON.stringify(s.nowPlayingMedia.slide) : ''}`
+    ? `${s.nowPlayingMedia.id}|${s.nowPlayingMedia.url}|${s.nowPlayingMedia.slide ? JSON.stringify(s.nowPlayingMedia.slide) : ''}|${s.nowPlayingMedia.autotask ? JSON.stringify(s.nowPlayingMedia.autotask) : ''}`
     : `none|${!!s.playlistId}|${s.online}`;
 
 function screenCard(s) {
@@ -471,10 +475,11 @@ async function pairScreen() {
 async function mediaPage() {
   view.innerHTML = `
     <div class="page-head">
-      <div><h1>Media</h1><div class="sub">Images, videos, slides, web pages and news to put in playlists</div></div>
+      <div><h1>Media</h1><div class="sub">Images, videos, slides, web pages, news and ticket stats to put in playlists</div></div>
       <div class="actions">
         <button class="btn" id="add-slide">+ Slide</button>
         <button class="btn" id="add-news">+ News</button>
+        <button class="btn" id="add-tickets">+ Ticket stats</button>
         <button class="btn" id="add-web">+ Web page</button>
         <label class="btn primary" style="flex-direction:row">+ Upload<input type="file" id="file" multiple accept="image/*,video/*" hidden></label>
       </div>
@@ -499,7 +504,7 @@ async function mediaPage() {
     box.innerHTML = `<div class="grid">${media
       .map(
         (m) => `<div class="card tile" data-id="${m.id}">
-        <div class="thumb">${preview(m)}<span class="badge">${m.kind}</span></div>
+        <div class="thumb">${preview(m)}<span class="badge">${m.kind === 'autotask' ? 'tickets' : m.kind}</span></div>
         <div class="tile-body"><div class="tile-name" title="${esc(m.name)}">${esc(m.name)}</div>
           <div class="muted">${mediaDetail(m)}${m.usedIn ? ` · in ${m.usedIn} playlist${m.usedIn > 1 ? 's' : ''}` : ''}</div>
           ${m.news?.error ? `<div class="muted" style="color:var(--warn)" title="${esc(m.news.error)}">⚠ Last update failed</div>` : ''}</div>
@@ -508,6 +513,8 @@ async function mediaPage() {
             ? '<button class="link" data-act="news">Settings</button>'
             : m.kind === 'slide'
               ? '<button class="link" data-act="slide">Edit</button><button class="link" data-act="duplicate">Duplicate</button>'
+              : m.kind === 'autotask'
+                ? '<button class="link" data-act="tickets">Settings</button><button class="link" data-act="duplicate">Duplicate</button>'
               : '<button class="link" data-act="rename">Rename</button>'
         }${m.kind === 'web' ? `<button class="link" data-act="preview" title="${esc(m.web?.previewError ? `Last try failed: ${m.web.previewError}` : 'Take a new picture of the page')}">Refresh preview</button>` : ''}<button class="link" data-act="delete" style="color:var(--danger)">Delete</button></div>
       </div>`,
@@ -564,6 +571,10 @@ async function mediaPage() {
     if (await newsDialog()) render();
   };
 
+  document.getElementById('add-tickets').onclick = async () => {
+    if (await ticketsDialog()) render();
+  };
+
   document.getElementById('add-web').onclick = async () => {
     const res = await modal(`
       <div class="dlg-body form"><h2>Add a web page</h2>
@@ -588,6 +599,17 @@ async function mediaPage() {
         if (!media) return render();
         if (await newsDialog(media)) render();
         return;
+      }
+      if (btn.dataset.act === 'tickets' || (btn.dataset.act === 'duplicate' && tile.querySelector('.badge')?.textContent === 'tickets')) {
+        const media = (await api('/media')).find((m) => m.id === id);
+        if (!media) return render();
+        if (btn.dataset.act === 'tickets') {
+          if (await ticketsDialog(media)) render();
+          return;
+        }
+        await api('/media/autotask', { method: 'POST', body: { name: `${media.name} (copy)`, options: media.autotask.options } });
+        toast('Widget duplicated');
+        return render();
       }
       if (btn.dataset.act === 'slide' || btn.dataset.act === 'duplicate') {
         const media = (await api('/media')).find((m) => m.id === id);
@@ -630,6 +652,10 @@ async function mediaPage() {
 function mediaDetail(m) {
   if (m.kind === 'slide') return `${esc(Slides.template(m.slide?.template).name)} slide`;
   if (m.kind === 'web') return esc(new URL(m.url).hostname);
+  if (m.kind === 'autotask') {
+    const layout = Tickets.LAYOUTS.find((l) => l.id === m.autotask?.options?.layout)?.name || 'Tickets';
+    return `${esc(layout)} · ${m.autotask?.demo ? 'demo data' : 'Autotask'}${m.autotask?.options?.hidePrivate ? ' · private hidden' : ''}`;
+  }
   if (m.kind === 'news') {
     const n = m.news || {};
     return `${esc(n.feedTitle || new URL(m.url).hostname)}${n.storyCount ? ` · ${n.storyCount} stories` : ''}`;
@@ -955,6 +981,237 @@ async function slideDialog(media = null) {
   });
   if (res) toast(media ? 'Slide saved. Screens showing it update right away.' : `Added ${res.name}`);
   return res;
+}
+
+// ---------- ticket stats (Autotask) ----------
+
+/** Add a ticket stats widget, or change one (pass the media). Resolves with the saved media, or null. */
+async function ticketsDialog(media = null) {
+  const lists = await api('/autotask/picklists');
+  const o = Tickets.normalize(media?.autotask?.options || {});
+  const checked = (b) => (b ? 'checked' : '');
+  const openStatuses = lists.statuses.filter((v) => !lists.closedStatuses.includes(v.id));
+  const chipGroup = (name, values, selected) =>
+    values.length
+      ? `<div class="chips">${values
+          .map((v) => `<label class="chip"><input type="checkbox" name="${name}" value="${v.id}" ${selected.includes(v.id) ? 'checked' : ''}><span>${esc(v.name)}</span></label>`)
+          .join('')}</div>`
+      : '<span class="muted">None found yet</span>';
+  const num = (name, value, attrs = '') => `<input type="number" name="${name}" value="${value ?? ''}" ${attrs}>`;
+
+  const html = `
+    <div class="dlg-body form tickets-form">
+      <h2>${media ? 'Ticket stats settings' : 'Add ticket stats'}</h2>
+      <p class="muted" style="margin:-8px 0 0">Live numbers from Autotask: queues, tickets opened and closed, and SLAs.
+        ${lists.mode === 'demo' ? `<strong>Showing demo data</strong> until ${isSuper() ? '<a href="#/integrations" data-cancel>Autotask is connected</a>' : 'a super admin connects Autotask under Integrations'}.` : 'Numbers refresh every few minutes.'}</p>
+      <div class="slide-editor">
+        <div class="slide-controls">
+          <fieldset><legend>Layout</legend>
+            <div class="chips">${Tickets.LAYOUTS.map(
+              (l) => `<label class="chip" title="${esc(l.hint)}"><input type="radio" name="layout" value="${l.id}" ${o.layout === l.id ? 'checked' : ''}><span>${esc(l.name)}</span></label>`,
+            ).join('')}</div>
+            <span class="muted field-help layout-hint"></span>
+          </fieldset>
+          <fieldset class="privacy"><legend>Privacy</legend>
+            <label class="check"><input type="checkbox" name="hidePrivate" ${checked(o.hidePrivate)}> Hide private information</label>
+            <span class="muted field-help">Leaves out company names and ticket titles, so this is safe on screens that visitors or customers can see. They are removed on the server and never sent to the screen. Ticket numbers, queues and priorities still show.</span>
+            <label class="check"><input type="checkbox" name="showAssignee" ${checked(o.showAssignee)}> Show who each ticket is assigned to</label>
+          </fieldset>
+          <fieldset><legend>Queues <span class="muted field-help">Leave all unticked to include every queue</span></legend>${chipGroup('queues', lists.queues, o.queues)}</fieldset>
+          <fieldset><legend>Statuses <span class="muted field-help">Open tickets only. Leave all unticked for every open status</span></legend>${chipGroup('statuses', openStatuses, o.statuses)}</fieldset>
+          <fieldset><legend>Priorities <span class="muted field-help">Leave all unticked for every priority</span></legend>${chipGroup('priorities', lists.priorities, o.priorities)}</fieldset>
+          <fieldset><legend>Number tiles</legend>
+            <span class="muted field-help">Tick the numbers to show. A tile turns amber or red when it reaches the number you set (for SLA met, when it drops to it). Leave blank for no colour.</span>
+            <table class="tile-table"><thead><tr><th>Show</th><th></th><th>Amber</th><th>Red</th></tr></thead><tbody>${Tickets.TILES.map(
+              (t) => `<tr title="${esc(t.hint)}"><td><input type="checkbox" name="tile" value="${t.id}" ${o.tiles.includes(t.id) ? 'checked' : ''}></td><td>${esc(t.label)}</td>
+                <td>${num(`amber-${t.id}`, o.thresholds[t.id].amber, `min="0" ${t.percent ? 'max="100"' : ''} placeholder="–"`)}</td>
+                <td>${num(`red-${t.id}`, o.thresholds[t.id].red, `min="0" ${t.percent ? 'max="100"' : ''} placeholder="–"`)}</td></tr>`,
+            ).join('')}
+            <tr title="Colours a queue's bar on the queue board"><td></td><td>Tickets in one queue</td><td>${num('amber-queue', o.queueThresholds.amber, 'min="0" placeholder="–"')}</td><td>${num('red-queue', o.queueThresholds.red, 'min="0" placeholder="–"')}</td></tr>
+            </tbody></table>
+          </fieldset>
+          <fieldset><legend>Hot list</legend>
+            <div class="row3">
+              <label>Tickets ${num('hotCount', o.hotCount, 'min="3" max="15"')}</label>
+              <label>Order <select name="hotSort">${Tickets.HOT_SORTS.map((x) => `<option value="${x.id}" ${o.hotSort === x.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></label>
+              <label>"At risk" when due within <span class="accent-row">${num('atRiskMinutes', o.atRiskMinutes, 'min="5" max="1440"')}<span class="muted">min</span></span></label>
+            </div>
+          </fieldset>
+          <div class="row3">
+            <label>Theme <select name="theme"><option value="dark" ${o.theme === 'dark' ? 'selected' : ''}>Dark</option><option value="light" ${o.theme === 'light' ? 'selected' : ''}>Light</option></select></label>
+            <label>Accent <input type="color" name="accent" value="${esc(o.accent)}"></label>
+            <label>Header text <input name="label" maxlength="80" placeholder="Service desk" value="${esc(o.label)}"></label>
+          </div>
+          <label>Name <input name="name" maxlength="200" placeholder="Defaults to the header text" value="${esc(media?.name || '')}"></label>
+          <p class="form-error" hidden></p>
+        </div>
+        <div class="slide-preview-col">
+          <div class="slide-preview tickets-preview"></div>
+          <p class="muted">Preview with ${lists.mode === 'demo' ? 'demo' : 'live'} numbers at 16:9. Screens show it full screen.</p>
+        </div>
+      </div>
+    </div>
+    <div class="dlg-foot">
+      <button type="button" class="btn" data-cancel>Cancel</button>
+      <button class="btn primary">${media ? 'Save' : 'Add widget'}</button>
+    </div>`;
+
+  const collect = (form) => {
+    const all = (name) => [...form.querySelectorAll(`input[name="${name}"]:checked`)].map((i) => i.value);
+    const val = (name) => form.querySelector(`[name="${name}"]`)?.value ?? '';
+    const thresholds = Object.fromEntries(Tickets.TILES.map((t) => [t.id, { amber: val(`amber-${t.id}`), red: val(`red-${t.id}`) }]));
+    return Tickets.normalize({
+      layout: form.querySelector('input[name=layout]:checked')?.value,
+      theme: val('theme'),
+      accent: val('accent'),
+      label: val('label'),
+      queues: all('queues').map(Number),
+      statuses: all('statuses').map(Number),
+      priorities: all('priorities').map(Number),
+      tiles: all('tile'),
+      thresholds,
+      queueThresholds: { amber: val('amber-queue'), red: val('red-queue') },
+      hotCount: val('hotCount'),
+      hotSort: val('hotSort'),
+      atRiskMinutes: val('atRiskMinutes'),
+      hidePrivate: form.hidePrivate.checked,
+      showAssignee: form.showAssignee.checked,
+    });
+  };
+
+  const res = await modal(html, {
+    xwide: true,
+    onOpen: (form, done) => {
+      const box = form.querySelector('.tickets-preview');
+      const hint = form.querySelector('.layout-hint');
+      let timer;
+      let seq = 0;
+      const refresh = () => {
+        clearTimeout(timer);
+        const options = collect(form);
+        hint.textContent = Tickets.LAYOUTS.find((l) => l.id === options.layout)?.hint || '';
+        timer = setTimeout(async () => {
+          const mine = ++seq;
+          try {
+            const content = await api('/autotask/preview', { method: 'POST', body: { options } });
+            if (mine === seq) box.innerHTML = Tickets.toHTML(content);
+          } catch (err) {
+            fail(err);
+          }
+        }, 200);
+      };
+      form.addEventListener('input', refresh);
+      form.addEventListener('change', refresh);
+      refresh();
+      submitInDialog(async (data) => {
+        const body = { name: data.name, options: collect(form) };
+        return media
+          ? await api(`/media/${media.id}/autotask`, { method: 'PUT', body })
+          : await api('/media/autotask', { method: 'POST', body });
+      })(form, done);
+    },
+  });
+  if (res) toast(media ? 'Saved. Screens showing it update right away.' : `Added ${res.name}`);
+  return res;
+}
+
+// ---------- integrations ----------
+
+async function integrationsPage() {
+  const s = await api('/integrations/autotask');
+  const st = s.status || {};
+  const statusLine = st.error
+    ? `<span class="status"><span class="dot" style="background:var(--danger)"></span> ${esc(st.error)}</span>`
+    : st.fetchedAt
+      ? `<span class="status"><span class="dot on"></span> ${st.demoData ? 'Demo data' : 'Connected'} · updated ${timeAgo(st.fetchedAt)} · ${st.openTickets} open tickets${st.truncated ? ' (first 5,000 only)' : ''}</span>`
+      : '<span class="muted">No data yet. It is fetched when the first ticket widget is added.</span>';
+  const closedChips = s.picklists.statuses.length && !st.demoData
+    ? s.picklists.statuses
+        .map((v) => `<label class="chip"><input type="checkbox" name="closedStatuses" value="${v.id}" ${s.closedStatuses.includes(v.id) ? 'checked' : ''}><span>${esc(v.name)}</span></label>`)
+        .join('')
+    : '';
+
+  view.innerHTML = `
+    <div class="page-head">
+      <div><h1>Integrations</h1><div class="sub">Connect other systems to show their data on screens. Only super admins can see this page.</div></div>
+    </div>
+    <form class="card integration-card form" id="autotask-form" autocomplete="off">
+      <div class="integration-head"><h2>Autotask PSA</h2><div>${statusLine}</div></div>
+      <p class="muted" style="margin:0">Ticket stats widgets read their numbers from here. Sinewave checks Autotask every few minutes and keeps a copy, so screens never talk to Autotask and never see these details. The secret is stored on the Sinewave server and is never shown again after saving.</p>
+      <label class="check"><input type="checkbox" name="demo" ${s.demo ? 'checked' : ''}> Use demo data instead of Autotask</label>
+      <fieldset class="live-fields" ${s.demo ? 'disabled' : ''}>
+        <p class="muted" style="margin:0">In Autotask, go to <em>Admin › Resources (Users)</em> and add a resource with the <em>API User (system)</em> security level. Its username and secret, and the integration code (API tracking identifier) chosen for it, go here. Sinewave only ever reads from Autotask.</p>
+        <div class="row3">
+          <label>API username <input name="username" value="${esc(s.username)}" placeholder="name@example.com" autocapitalize="none" spellcheck="false"></label>
+          <label>Secret <input type="password" name="secret" placeholder="${s.hasSecret ? 'Saved. Leave blank to keep' : ''}" autocomplete="new-password"></label>
+          <label>Integration code <input name="integrationCode" placeholder="${s.hasIntegrationCode ? `Saved (${esc(s.integrationCode)}). Leave blank to keep` : ''}" autocapitalize="none" spellcheck="false"></label>
+        </div>
+        <p class="muted" style="margin:0">Zone: ${s.zoneName ? `<strong>${esc(s.zoneName)}</strong> (found from the username)` : 'found automatically from the username when you test or save'}</p>
+      </fieldset>
+      <div class="row3">
+        <label>Check every <span class="accent-row"><input type="number" name="refreshMinutes" min="1" max="60" value="${s.refreshMinutes}"><span class="muted">min</span></span></label>
+        <label>Time zone for "today" <input name="timeZone" value="${esc(s.timeZone)}" placeholder="${esc(s.serverTimeZone)}" spellcheck="false"></label>
+        <div></div>
+      </div>
+      ${closedChips ? `<fieldset><legend>Statuses that count as closed</legend><div class="chips">${closedChips}</div></fieldset>` : ''}
+      <p class="form-error" hidden></p>
+      <div class="actions">
+        <button type="button" class="btn" id="at-test">Test connection</button>
+        <button type="button" class="btn" id="at-refresh">Refresh now</button>
+        <button class="btn primary" id="at-save">Save</button>
+      </div>
+    </form>`;
+
+  const form = document.getElementById('autotask-form');
+  const err = form.querySelector('.form-error');
+  const body = () => {
+    const d = Object.fromEntries(new FormData(form));
+    const closed = [...form.querySelectorAll('input[name=closedStatuses]:checked')].map((i) => Number(i.value));
+    return {
+      demo: form.demo.checked,
+      username: form.username.value,
+      secret: form.secret.value,
+      integrationCode: form.integrationCode.value,
+      refreshMinutes: Number(d.refreshMinutes),
+      timeZone: d.timeZone,
+      ...(closed.length ? { closedStatuses: closed } : {}),
+    };
+  };
+  const busy = async (btn, text, fn) => {
+    const old = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = text;
+    err.hidden = true;
+    try {
+      await fn();
+    } catch (e) {
+      err.textContent = e.message;
+      err.hidden = false;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = old;
+    }
+  };
+  form.demo.addEventListener('change', () => (form.querySelector('.live-fields').disabled = form.demo.checked));
+  document.getElementById('at-test').onclick = (e) =>
+    busy(e.target, 'Testing…', async () => {
+      const r = await api('/integrations/autotask/test', { method: 'POST', body: body() });
+      toast(`Connected to Autotask (${r.zoneName}): ${r.queues} queues, ${r.statuses} statuses`);
+    });
+  document.getElementById('at-refresh').onclick = (e) =>
+    busy(e.target, 'Refreshing…', async () => {
+      await api('/integrations/autotask/refresh', { method: 'POST' });
+      toast('Ticket numbers refreshed');
+      route();
+    });
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    busy(document.getElementById('at-save'), 'Saving…', async () => {
+      await api('/integrations/autotask', { method: 'PUT', body: body() });
+      toast('Autotask settings saved');
+      route();
+    });
+  });
 }
 
 // ---------- playlists ----------
