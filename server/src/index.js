@@ -10,6 +10,7 @@ import { admin } from './routes/admin.js';
 import { users } from './routes/users.js';
 import { player } from './routes/player.js';
 import { HttpError } from './util.js';
+import { VERSION } from './version.js';
 import { startNewsRefresher } from './news.js';
 import { backfillPreviews, findChromium } from './webpreview.js';
 
@@ -25,7 +26,7 @@ app.use(express.json({ limit: '1mb' }));
 
 app.get('/healthz', (_req, res) => {
   query('SELECT 1');
-  res.json({ ok: true });
+  res.json({ ok: true, version: VERSION });
 });
 
 // API

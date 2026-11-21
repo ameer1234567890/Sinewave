@@ -6,6 +6,8 @@ const dialog = document.getElementById('dialog');
 // The signed-in account. Standard users can't pair or remove screens, or manage users.
 // The server enforces this too; the dashboard just hides what you can't use.
 let me = null;
+// App version and screen-wide settings, from /api/settings.
+let settings = { version: window.SINEWAVE_VERSION, showVersionOnScreens: true };
 const isSuper = () => me?.role === 'super_admin';
 const ROLE_NAMES = { super_admin: 'Super admin', standard: 'Standard' };
 
@@ -229,6 +231,8 @@ async function startApp(user) {
   document.getElementById('me-role').textContent = ROLE_NAMES[me.role] || me.role;
   document.querySelectorAll('[data-super]').forEach((el) => (el.hidden = !isSuper()));
   if (!isSuper() && location.hash === '#/users') location.hash = '#/screens';
+  settings = await api('/settings').catch(() => settings);
+  document.getElementById('app-version').textContent = `Sinewave v${settings.version}`;
   document.getElementById('login').hidden = true;
   document.getElementById('app').hidden = false;
   await route();
@@ -292,11 +296,12 @@ function updateScreenCard(el, s, playlists) {
   el.querySelector('.screen-ip').textContent = s.lastIp || '';
   el.querySelector('.dot').classList.toggle('on', s.online);
   el.querySelector('.status-text').textContent = s.online ? 'Online' : 'Offline';
-  el.querySelector('.screen-conn').textContent = s.online
-    ? s.connected
-      ? 'Live connection'
-      : 'Polling'
-    : `Last seen ${timeAgo(s.lastSeenAt)}`;
+  const conn = s.online ? (s.connected ? 'Live connection' : 'Polling') : `Last seen ${timeAgo(s.lastSeenAt)}`;
+  // Which version the screen is running, flagged when it's behind the server (a Reload fixes that).
+  const behind = s.playerVersion && s.playerVersion !== settings.version;
+  el.querySelector('.screen-conn').textContent = s.playerVersion
+    ? `${conn} · v${s.playerVersion}${behind ? ` (server is v${settings.version}, press Reload)` : ''}`
+    : conn;
   el.querySelector('.now-name').textContent = s.nowPlaying || '—';
   const badge = el.querySelector('.live-badge');
   badge.textContent = s.online ? 'Live' : 'Last seen';
@@ -321,10 +326,24 @@ async function screensPage() {
   view.innerHTML = `
     <div class="page-head">
       <div><h1>Screens</h1><div class="sub" id="screen-summary">&nbsp;</div></div>
-      <div class="actions">${isSuper() ? '<button class="btn primary" id="pair">+ Pair screen</button>' : ''}</div>
+      <div class="actions">
+        ${isSuper() ? `<label class="check" title="A tiny, faint version number in the bottom-right corner of every screen"><input type="checkbox" id="show-version" ${settings.showVersionOnScreens ? 'checked' : ''}> Show version on screens</label>` : ''}
+        ${isSuper() ? '<button class="btn primary" id="pair">+ Pair screen</button>' : ''}
+      </div>
     </div>
     <div id="screens"></div>`;
-  if (isSuper()) document.getElementById('pair').onclick = pairScreen;
+  if (isSuper()) {
+    document.getElementById('pair').onclick = pairScreen;
+    document.getElementById('show-version').onchange = async (e) => {
+      try {
+        settings = await api('/settings', { method: 'PATCH', body: { showVersionOnScreens: e.target.checked } });
+        toast(settings.showVersionOnScreens ? 'Screens now show the version number' : 'Version number hidden on screens');
+      } catch (err) {
+        e.target.checked = !e.target.checked;
+        fail(err);
+      }
+    };
+  }
 
   const render = async () => {
     const [screens, playlists] = await Promise.all([api('/screens'), api('/playlists')]);

@@ -354,3 +354,7 @@ dialog.xwide { width: min(1120px, calc(100vw - 32px)); }
 .mini .web-thumb { padding: 2px; gap: 0; }
 .mini .web-thumb-icon { font-size: 14px; }
 .mini .web-thumb-text { display: none; }
+
+/* Version setting on the Screens page, and the version in the sidebar. */
+.page-head .check { display: flex; font-size: 14px; color: var(--muted); margin-right: 8px; }
+.app-version { font-size: 12px; }

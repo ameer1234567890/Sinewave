@@ -12,6 +12,7 @@ import { mediaUrl } from '../manifest.js';
 import { POPULAR_FEEDS, getFeedRow, newsContent, normalizeNewsOptions, parseFeedUrl, parseOptions, refreshFeed } from '../news.js';
 import { normalizeSlideOptions, slideContent, slidesUsingImage } from '../slides.js';
 import { isPreviewPending, previewUrl, queuePreview } from '../webpreview.js';
+import { VERSION, setShowVersionOnScreens, showVersionOnScreens } from '../version.js';
 import { HttpError, isUuid, normalizeCode, randomToken, sha256, uuid } from '../util.js';
 
 export const admin = express.Router();
@@ -400,6 +401,25 @@ admin.delete('/playlists/:id', async (req, res) => {
   if (!rowCount) throw new HttpError(404, 'Playlist not found');
   await hub.notifyScreens(affected.map((r) => r.id));
   res.status(204).end();
+});
+
+// ---------- Settings ----------
+
+function settings() {
+  return { version: VERSION, showVersionOnScreens: showVersionOnScreens() };
+}
+
+admin.get('/settings', (_req, res) => {
+  res.json(settings());
+});
+
+admin.patch('/settings', requireSuperAdmin, async (req, res) => {
+  const v = req.body?.showVersionOnScreens;
+  if (typeof v !== 'boolean') throw new HttpError(400, 'Nothing to update');
+  setShowVersionOnScreens(v);
+  const { rows } = await query('SELECT id FROM screens');
+  await hub.notifyScreens(rows.map((r) => r.id));
+  res.json(settings());
 });
 
 // ---------- Screens ----------
