@@ -1,0 +1,35 @@
+name: Bug report
+description: Something isn't working as expected
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Go to Playlists
+        2. Add a web page
+        3. ...
+  - type: input
+    id: version
+    attributes:
+      label: Sinewave version or image tag
+      placeholder: e.g. latest, 0.1.0, or a commit
+  - type: input
+    id: setup
+    attributes:
+      label: Setup
+      description: How you run the server and the player.
+      placeholder: e.g. Docker on Unraid, player in Chromium kiosk on a Raspberry Pi 5
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      description: Server logs (`docker logs sinewave`), browser console errors, or a screenshot. Add `?debug` to the player URL to show its status overlay.
