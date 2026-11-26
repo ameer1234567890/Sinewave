@@ -32,7 +32,7 @@ Where things live:
 
 | Folder | What's in it |
 | --- | --- |
-| `server/src/` | The Node.js server: REST API, WebSocket hub, auth, news feeds, web previews |
+| `server/src/` | The Node.js server: REST API, WebSocket hub, auth, web previews |
 | `server/migrations/` | SQLite schema changes, applied in filename order on start |
 | `server/public/` | The dashboard (plain HTML, CSS and JavaScript, no build step) |
 | `player/` | The web player and its service worker |

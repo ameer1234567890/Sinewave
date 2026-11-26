@@ -32,9 +32,7 @@ SQLite comfortably handles the write load of hundreds of screens (heartbeats, st
 
 | Table | What it holds |
 | --- | --- |
-| `media` | Uploaded images and videos (file on disk plus a sha256), web page URLs, news items (feed URL plus JSON display options), and slides (template, background, text and picture ids, as JSON). |
-| `integrations` | Connections to other systems (one row each, e.g. `autotask`): settings as JSON, the API secret in its own write-only column, and the last good copy of the data with when it was fetched and the last error. |
-| `news_feeds` | The last good copy of each news feed in use: title, stories (JSON), ETag, and the last error. |
+| `media` | Uploaded images and videos (file on disk plus a sha256), web page URLs, and slides (template, background, text and picture ids, as JSON). |
 | `playlists`, `playlist_items` | Ordered items, each with an optional duration override. |
 | `screens` | Paired players: name, assigned playlist, hashed device token, last seen, now playing. |
 | `pairing_requests` | Short-lived codes shown by unpaired players. |
@@ -42,11 +40,9 @@ SQLite comfortably handles the write load of hundreds of screens (heartbeats, st
 
 The app version lives in `player/version.js`, loaded by the player, the dashboard and the server, so all three report the same number. Players send theirs in their `status` message, and the dashboard flags a screen running an older version. The manifest carries screen-wide `display` options (today just `showVersion`, from the `settings` table), so changing one reaches every screen like a content change.
 
+New media (uploads, web pages and slides) is appended to the playlist named `Default` by `server/src/defaultPlaylist.js`, which creates it when missing; screens playing it get a `content-changed` push.
+
 Slides are stored as settings, not pictures. `player/slides.js` holds the templates, the backgrounds (gradients and patterns generated in code, so there are no image files or licences to worry about) and the renderer; the player, the dashboard (for the editor preview and thumbnails) and the server (to check input) all load that one file. Slide layouts are sized with container query units, so the same slide fits a full screen, a thumbnail or a portrait display. A slide's picture is an image from Media; the manifest lists it as an asset so players cache it.
-
-News feeds are fetched by the server (no CORS problems, and one request per feed however many screens show it), every `NEWS_REFRESH_MINUTES` (15 by default), with conditional requests. Story photos are downloaded to `DATA_DIR/media/news/` and served from `/media/news/...`, so players cache them like any other file; photos no stored feed uses are deleted after a day. When a feed's stories change, screens showing it get a `content-changed` push. A feed that fails keeps its last good stories.
-
-Ticket stats widgets (media kind `autotask`) read from Autotask PSA's REST API. A super admin enters an API user (username, secret, integration code) under Integrations; the zone is found from the username with Autotask's `zoneInformation` lookup, and the credentials are tested before they're saved. While any widget exists, the server polls every couple of minutes (open tickets, tickets completed and created in the last 7 days, plus hourly lookups of queues, statuses, priorities, resource and company names), keeping at most 5,000 tickets per query, and stores a compact copy in `integrations.snapshot`. Each widget's numbers are worked out on the server for its filters and sent in the manifest, so screens never contact Autotask or see credentials. With **Hide private information** on, company names and ticket titles are removed on the server before they reach the manifest. A failed refresh keeps the last good copy, and screens mark the numbers as old when several refreshes are missed. Without credentials, or with demo data switched on, `demoSnapshot()` makes believable tickets instead. `player/autotask.js` holds the layouts, settings and renderer, shared like `slides.js`.
 
 Uploaded files are stored at `DATA_DIR/media/<media id>/<file name>`. A file never changes once uploaded, so `/media/...` is served with a one-year immutable cache header, and players can cache it by URL.
 
@@ -84,10 +80,10 @@ The socket also carries:
 
 `player/` is plain HTML, CSS and JS with no build step, so it can be served by the server or bundled into a native shell unchanged.
 
-- **Playback**: two stacked layers. The next item loads into the hidden layer and only fades in once it can render, so there's no flash of black between items. Images and web pages show for their duration (10s and 30s by default). Videos play to the end unless a duration is set. Videos are muted so browsers allow autoplay. News items arrive with their stories inside the manifest, and the player draws them itself (text is always set as text, never HTML), cycling through stories; by default the item shows each story once. Slides also arrive as settings in the manifest and are drawn by the player from `slides.js` (10s by default).
+- **Playback**: two stacked layers. The next item loads into the hidden layer and only fades in once it can render, so there's no flash of black between items. Images and web pages show for their duration (10s and 30s by default). Videos play to the end unless a duration is set. Videos are muted so browsers allow autoplay. Slides also arrive as settings in the manifest and are drawn by the player from `slides.js` (10s by default).
 - **Updates mid-loop**: if a new manifest still contains the item on screen, that item finishes and the loop carries on in the new order. If the item was removed or the playlist swapped, the player switches right away.
 - **Caching**: on each new manifest the player downloads every file into Cache Storage (`sinewave-media-v1`) before switching, then deletes files no longer used. The service worker (`sw.js`) answers `/media/...` requests from that cache, including byte-range requests, which video elements use for seeking. The player shell is network-first with a cached fallback, and the last manifest is kept in `localStorage`. Together these let a screen that reboots with no network go straight back to playing.
-- **Limits**: service workers only run on HTTPS or localhost. Browser storage quotas apply, usually a share of free disk. Web page items are always loaded live. News items play from the manifest and cached photos, so they work offline with the stories they last received.
+- **Limits**: service workers only run on HTTPS or localhost. Browser storage quotas apply, usually a share of free disk. Web page items are always loaded live.
 
 ### Wrapping the player later
 

@@ -8,11 +8,9 @@ import { requireSuperAdmin } from '../auth.js';
 import { config } from '../config.js';
 import { isForeignKeyError, query, withTransaction } from '../db.js';
 import { hub } from '../hub.js';
+import { tryAddToDefaultPlaylist } from '../defaultPlaylist.js';
 import { mediaUrl } from '../manifest.js';
-import { POPULAR_FEEDS, getFeedRow, newsContent, normalizeNewsOptions, parseFeedUrl, parseOptions, refreshFeed } from '../news.js';
 import { normalizeSlideOptions, slideContent, slidesUsingImage } from '../slides.js';
-import { Tickets, parseWidgetOptions, ticketContent } from '../autotask.js';
-import { ensureTicketData } from './integrations.js';
 import { isPreviewPending, previewUrl, queuePreview } from '../webpreview.js';
 import { VERSION, setShowVersionOnScreens, showVersionOnScreens } from '../version.js';
 import { HttpError, isUuid, normalizeCode, randomToken, sha256, uuid } from '../util.js';
@@ -34,24 +32,15 @@ function cleanName(v, fallback) {
   return s || fallback;
 }
 
+/** Put a just-created media item in the "Default" playlist and tell any screens playing it. */
+async function addToDefault(mediaId) {
+  const playlistId = tryAddToDefaultPlaylist(mediaId);
+  if (playlistId) await hub.notifyPlaylist(playlistId);
+}
+
 function isOnline(row) {
   if (hub.isConnected(row.id)) return true;
   return Boolean(row.last_seen_at && Date.now() - new Date(row.last_seen_at).getTime() < config.onlineWindowSeconds * 1000);
-}
-
-function serializeNews(m) {
-  const content = newsContent(m);
-  return {
-    feedUrl: m.url,
-    feedTitle: content.feedTitle,
-    options: parseOptions(m),
-    fetchedAt: content.fetchedAt,
-    error: content.error,
-    storyCount: content.stories.length,
-    // A taste of what's on screen, for the media tile.
-    headline: content.stories[0]?.title || null,
-    image: content.stories.find((s) => s.image)?.image || null,
-  };
 }
 
 function serializeMedia(m) {
@@ -64,9 +53,7 @@ function serializeMedia(m) {
     sizeBytes: m.size_bytes === null ? null : Number(m.size_bytes),
     createdAt: m.created_at,
     usedIn: m.used_in === undefined ? undefined : Number(m.used_in),
-    news: m.kind === 'news' ? serializeNews(m) : undefined,
     slide: m.kind === 'slide' ? slideContent(m) : undefined,
-    autotask: m.kind === 'autotask' ? ticketContent(parseWidgetOptions(m)) : undefined,
     web: m.kind === 'web' ? serializeWeb(m) : undefined,
   };
 }
@@ -99,9 +86,7 @@ function serializeScreen(s) {
           name: s.np_name,
           kind: s.np_kind,
           url: mediaUrl({ id: s.np_id, kind: s.np_kind, filename: s.np_filename, url: s.np_url }),
-          news: s.np_kind === 'news' ? serializeNews({ url: s.np_url, options: s.np_options }) : undefined,
           slide: s.np_kind === 'slide' ? slideContent({ options: s.np_options }) : undefined,
-          autotask: s.np_kind === 'autotask' ? ticketContent(parseWidgetOptions({ options: s.np_options })) : undefined,
         }
       : null,
     playerVersion: s.player_version,
@@ -154,7 +139,8 @@ admin.post('/media', upload.array('files'), async (req, res) => {
          VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
         [id, cleanName(path.basename(f.originalname, path.extname(f.originalname)), filename), kind, f.mimetype, filename, f.size, checksum],
       );
-      created.push(serializeMedia({ ...rows[0], used_in: 0 }));
+      await addToDefault(id);
+      created.push(serializeMedia({ ...rows[0], used_in: 1 }));
     }
   } finally {
     await Promise.all(files.map((f) => fsp.rm(f.path, { force: true })));
@@ -175,7 +161,8 @@ admin.post('/media/web', async (req, res) => {
     [uuid(), cleanName(req.body?.name, url.hostname), url.toString(), sha256(url.toString())],
   );
   queuePreview(rows[0].id);
-  res.status(201).json(serializeMedia({ ...rows[0], used_in: 0 }));
+  await addToDefault(rows[0].id);
+  res.status(201).json(serializeMedia({ ...rows[0], used_in: 1 }));
 });
 
 /** Take a fresh picture of a web page, e.g. after the page has changed. */
@@ -185,97 +172,6 @@ admin.post('/media/:id/preview', async (req, res) => {
   if (!rows.length) throw new HttpError(404, 'Web page not found');
   queuePreview(id);
   res.status(202).json(serializeMedia(rows[0]));
-});
-
-// ---------- News ----------
-
-admin.get('/news/feeds', (_req, res) => {
-  res.json(POPULAR_FEEDS);
-});
-
-/** Fetch a feed now (or reuse a copy from the last few minutes) so a bad URL is caught before it's saved. */
-async function checkFeed(feedUrl) {
-  const row = getFeedRow(feedUrl);
-  if (row?.fetched_at && Date.now() - new Date(row.fetched_at).getTime() < 5 * 60_000) return row;
-  try {
-    return (await refreshFeed(feedUrl)).row;
-  } catch (err) {
-    throw new HttpError(400, `Couldn't read that feed: ${err.message}`);
-  }
-}
-
-admin.post('/media/news', async (req, res) => {
-  const feedUrl = parseFeedUrl(req.body?.feedUrl);
-  const options = normalizeNewsOptions(req.body?.options || {});
-  const row = await checkFeed(feedUrl);
-  const { rows } = await query(
-    `INSERT INTO media (id, name, kind, url, options, checksum) VALUES ($1, $2, 'news', $3, $4, $5) RETURNING *`,
-    [uuid(), cleanName(req.body?.name, row.title || new URL(feedUrl).hostname), feedUrl, JSON.stringify(options), sha256(feedUrl)],
-  );
-  res.status(201).json(serializeMedia({ ...rows[0], used_in: 0 }));
-});
-
-/** Change a news item's feed or settings. */
-admin.put('/media/:id/news', async (req, res) => {
-  const id = param(req);
-  const { rows: found } = await query(`SELECT * FROM media WHERE id = $1 AND kind = 'news'`, [id]);
-  if (!found.length) throw new HttpError(404, 'News item not found');
-  const feedUrl = req.body?.feedUrl === undefined ? found[0].url : parseFeedUrl(req.body.feedUrl);
-  if (feedUrl !== found[0].url) await checkFeed(feedUrl);
-  const options = normalizeNewsOptions(req.body?.options || {}, parseOptions(found[0]));
-  const { rows } = await query('UPDATE media SET name = $2, url = $3, options = $4, checksum = $5 WHERE id = $1 RETURNING *', [
-    id,
-    cleanName(req.body?.name, found[0].name),
-    feedUrl,
-    JSON.stringify(options),
-    sha256(feedUrl),
-  ]);
-  await hub.notifyMedia(id);
-  res.json(serializeMedia(rows[0]));
-});
-
-/** Fetch a news item's feed right now instead of waiting for the next scheduled refresh. */
-admin.post('/media/:id/news/refresh', async (req, res) => {
-  const id = param(req);
-  const { rows } = await query(`SELECT * FROM media WHERE id = $1 AND kind = 'news'`, [id]);
-  if (!rows.length) throw new HttpError(404, 'News item not found');
-  try {
-    await refreshFeed(rows[0].url);
-  } catch (err) {
-    throw new HttpError(502, `Couldn't refresh the feed: ${err.message}`);
-  }
-  await hub.notifyMedia(id);
-  res.json(serializeMedia(rows[0]));
-});
-
-// ---------- Ticket widgets (Autotask) ----------
-
-admin.post('/media/autotask', async (req, res) => {
-  const options = Tickets.normalize(req.body?.options);
-  const json = JSON.stringify(options);
-  const { rows } = await query(
-    `INSERT INTO media (id, name, kind, options, checksum) VALUES ($1, $2, 'autotask', $3, $4) RETURNING *`,
-    [uuid(), cleanName(req.body?.name, options.label || 'Ticket stats'), json, sha256(json)],
-  );
-  await ensureTicketData();
-  res.status(201).json(serializeMedia({ ...rows[0], used_in: 0 }));
-});
-
-/** Change a ticket widget's layout, filters or thresholds. Screens showing it update straight away. */
-admin.put('/media/:id/autotask', async (req, res) => {
-  const id = param(req);
-  const { rows: found } = await query(`SELECT * FROM media WHERE id = $1 AND kind = 'autotask'`, [id]);
-  if (!found.length) throw new HttpError(404, 'Ticket widget not found');
-  const options = Tickets.normalize(req.body?.options, parseWidgetOptions(found[0]));
-  const json = JSON.stringify(options);
-  const { rows } = await query('UPDATE media SET name = $2, options = $3, checksum = $4 WHERE id = $1 RETURNING *', [
-    id,
-    cleanName(req.body?.name, found[0].name),
-    json,
-    sha256(json),
-  ]);
-  await hub.notifyMedia(id);
-  res.json(serializeMedia(rows[0]));
 });
 
 // ---------- Slides ----------
@@ -292,7 +188,8 @@ admin.post('/media/slide', async (req, res) => {
     `INSERT INTO media (id, name, kind, options, checksum) VALUES ($1, $2, 'slide', $3, $4) RETURNING *`,
     [uuid(), slideName(req, options), json, sha256(json)],
   );
-  res.status(201).json(serializeMedia({ ...rows[0], used_in: 0 }));
+  await addToDefault(rows[0].id);
+  res.status(201).json(serializeMedia({ ...rows[0], used_in: 1 }));
 });
 
 /** Change a slide's template, background, text or pictures. Screens showing it update straight away. */

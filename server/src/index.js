@@ -9,16 +9,15 @@ import { hub } from './hub.js';
 import { admin } from './routes/admin.js';
 import { users } from './routes/users.js';
 import { player } from './routes/player.js';
-import { integrations, notifyTicketScreens } from './routes/integrations.js';
 import { HttpError } from './util.js';
 import { VERSION } from './version.js';
-import { startNewsRefresher } from './news.js';
-import { startAutotaskRefresher } from './autotask.js';
 import { backfillPreviews, findChromium } from './webpreview.js';
 
 const freshInstall = migrate();
 await initAuth();
 fs.mkdirSync(config.mediaDir, { recursive: true });
+// News photos downloaded by older versions are no longer used.
+fs.rmSync(`${config.mediaDir}/news`, { recursive: true, force: true });
 if (freshInstall) seedDemo();
 
 const app = express();
@@ -39,7 +38,6 @@ app.use('/api/player', player);
 // Everything below needs a signed-in account. Super-admin-only routes check the role themselves.
 app.use('/api', requireUser);
 app.use('/api', users);
-app.use('/api', integrations);
 app.use('/api', admin);
 app.use('/api', (_req, _res, next) => next(new HttpError(404, 'Not found')));
 
@@ -70,15 +68,6 @@ app.use((err, _req, res, _next) => {
   if (res.headersSent) return;
   res.status(status).json({ error: status >= 500 ? 'Something went wrong on the server' : err.message });
 });
-
-// Keep news feeds fresh and tell screens showing them when headlines change.
-startNewsRefresher(async (feedUrl) => {
-  const { rows } = await query(`SELECT id FROM media WHERE kind = 'news' AND url = $1`, [feedUrl]);
-  for (const r of rows) await hub.notifyMedia(r.id);
-});
-
-// Keep ticket widgets' numbers fresh (from Autotask, or demo data until it's connected).
-startAutotaskRefresher(notifyTicketScreens);
 
 // Pictures for web page cards that don't have one yet (e.g. the demo pages, or pages added before previews existed).
 console.log(findChromium() ? `Web page previews: screenshots with ${findChromium()}` : 'Web page previews: share images only (Chromium not found)');

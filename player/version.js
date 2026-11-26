@@ -10,4 +10,4 @@
 (function (root, version) {
   if (typeof module === 'object' && module.exports) module.exports = version;
   else root.SINEWAVE_VERSION = version;
-})(typeof self !== 'undefined' ? self : this, '0.5.1');
+})(typeof self !== 'undefined' ? self : this, '0.7.0');

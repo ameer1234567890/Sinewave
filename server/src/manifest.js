@@ -1,18 +1,16 @@
 import { query } from './db.js';
 import { sha256 } from './util.js';
-import { newsContent, newsDefaultSeconds } from './news.js';
 import { DEFAULT_SLIDE_SECONDS, slideContent } from './slides.js';
-import { DEFAULT_WIDGET_SECONDS, parseWidgetOptions, ticketContent } from './autotask.js';
 import { showVersionOnScreens } from './version.js';
 
 export const DEFAULT_IMAGE_SECONDS = 10;
 export const DEFAULT_WEB_SECONDS = 30;
 
 export function mediaUrl(media) {
-  // Web pages and news items point at their external page or feed.
-  if (media.kind === 'web' || media.kind === 'news') return media.url;
+  // Web pages point at their external page.
+  if (media.kind === 'web') return media.url;
   // Slides are drawn by the player from their settings; there is no file.
-  if (media.kind === 'slide' || media.kind === 'autotask') return null;
+  if (media.kind === 'slide') return null;
   return `/media/${media.id}/${encodeURIComponent(media.filename)}`;
 }
 
@@ -52,17 +50,6 @@ export async function buildManifest(screen) {
             durationSeconds:
               r.duration_seconds ?? (r.kind === 'image' ? DEFAULT_IMAGE_SECONDS : r.kind === 'web' ? DEFAULT_WEB_SECONDS : null),
           };
-          if (r.kind === 'news') {
-            // The stories travel inside the manifest, so the player keeps them for offline use,
-            // and a feed update changes the manifest version like any other content change.
-            const news = newsContent(r);
-            item.news = news;
-            item.checksum = sha256(JSON.stringify(news.stories));
-            item.assets = news.stories.map((s) => s.image).filter(Boolean);
-            item.durationSeconds = r.duration_seconds ?? newsDefaultSeconds(news);
-            delete news.fetchedAt; // changes on every refresh; keep it out of the version
-            delete news.error;
-          }
           if (r.kind === 'slide') {
             // The settings travel in the manifest; the player draws the slide itself, so it works offline.
             // Pictures are listed as assets so the player caches them.
@@ -71,15 +58,6 @@ export async function buildManifest(screen) {
             item.checksum = sha256(JSON.stringify(slide));
             item.assets = [slide.imageUrl, slide.backgroundUrl].filter(Boolean);
             item.durationSeconds = r.duration_seconds ?? DEFAULT_SLIDE_SECONDS;
-          }
-          if (r.kind === 'autotask') {
-            // Only the numbers travel (never Autotask credentials), and the player keeps the last
-            // copy so a screen still shows them, marked as old, if the server goes away.
-            const tickets = ticketContent(parseWidgetOptions(r));
-            delete tickets.error;
-            item.autotask = tickets;
-            item.checksum = sha256(JSON.stringify(tickets));
-            item.durationSeconds = r.duration_seconds ?? DEFAULT_WIDGET_SECONDS;
           }
           return item;
         }),

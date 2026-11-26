@@ -5,9 +5,6 @@
  *   cd e2e && npm install && npx playwright install chromium && npm test
  *
  * Env: BASE_URL (default http://localhost:8080), ADMIN_USERNAME / ADMIN_PASSWORD (default admin / admin).
- * The news steps serve a test RSS feed from this process on FEED_PORT (default 8098); the server
- * must be able to reach it at FEED_HOST (default localhost, so run Docker with --network host,
- * or set FEED_HOST=host.docker.internal).
  * ffmpeg on PATH adds a video to the test; without it the video steps are skipped.
  *
  * It drives the dashboard like a person would, pairs a separate headless "screen",
@@ -16,7 +13,6 @@
  */
 const { chromium } = require('playwright');
 const { execFileSync } = require('node:child_process');
-const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 const assert = require('node:assert/strict');
@@ -27,52 +23,6 @@ const PASSWORD = process.env.ADMIN_PASSWORD || 'admin';
 const OUT = path.join(__dirname, 'screenshots');
 const FIX = path.join(__dirname, 'test-results', 'fixtures');
 const RUN = Date.now().toString(36).slice(-4).toUpperCase();
-
-const FEED_PORT = Number(process.env.FEED_PORT || 8098);
-const FEED_BASE = `http://${process.env.FEED_HOST || 'localhost'}:${FEED_PORT}`;
-
-// A small made-up news feed, with photos, for the news widget steps.
-const STORIES = [
-  ['Coastal railway reopens after storm repairs', 'Engineers worked through the night to rebuild a sea wall, and the first trains ran on time this morning.'],
-  ['City library to stay open until midnight during exams', 'The trial runs for six weeks and includes free hot drinks after 9pm.'],
-  ['Local team clinches the league on the final day', 'A late winner sparked celebrations across town, with an open-top bus parade planned for Sunday.'],
-  ['New cycle lanes cut commute times, council says', 'Early figures suggest journeys along the river route are now eleven minutes shorter on average.'],
-  ['Weekend forecast: bright and breezy with sunny spells', 'Temperatures will reach 14C on Saturday before showers move in from the west on Sunday evening.'],
-];
-
-function feedXml() {
-  const now = Date.now();
-  const items = STORIES.map(([title, summary], i) => `
-    <item><title><![CDATA[${title}]]></title><description><![CDATA[<p>${summary}</p>]]></description>
-      <link>${FEED_BASE}/story/${i + 1}</link><guid isPermaLink="false">story-${i + 1}</guid>
-      <pubDate>${new Date(now - (i * 47 + 12) * 60_000).toUTCString()}</pubDate>
-      <media:thumbnail width="240" height="135" url="${FEED_BASE}/img/${i + 1}.png"/></item>`).join('');
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<rss version="2.0" xmlns:media="http://search.yahoo.com/mrss/"><channel>
-  <title>Sinewave Gazette</title><link>${FEED_BASE}/</link><description>Test feed</description>${items}
-</channel></rss>`;
-}
-
-async function startFeedServer(images) {
-  const server = http.createServer((req, res) => {
-    const img = /^\/img\/(\d+)\.png$/.exec(req.url);
-    if (req.url === '/feed.xml') {
-      res.writeHead(200, { 'Content-Type': 'application/rss+xml; charset=utf-8' });
-      return res.end(feedXml());
-    }
-    if (img && images[img[1] - 1]) {
-      res.writeHead(200, { 'Content-Type': 'image/png' });
-      return res.end(fs.readFileSync(images[img[1] - 1]));
-    }
-    if (req.url === '/not-a-feed') {
-      res.writeHead(200, { 'Content-Type': 'text/html' });
-      return res.end('<!doctype html><title>Hello</title><p>Just a web page');
-    }
-    res.writeHead(404).end();
-  });
-  await new Promise((resolve) => server.listen(FEED_PORT, '0.0.0.0', resolve));
-  return server;
-}
 
 let step = 0;
 const log = (msg) => console.log(`${String(++step).padStart(2, '0')}. ${msg}`);
@@ -96,25 +46,6 @@ async function makeFixtures(browser) {
     await page.screenshot({ path: file });
     files.push(file);
   }
-  // "Photos" for the news stories: simple landscapes.
-  const scenes = [
-    ['#7cc4f2', '#d8eefa', '#2f6b4f', '#1d4a36', '#e8c66a'],
-    ['#2b2e4a', '#e84545', '#903749', '#53354a', '#ffd56b'],
-    ['#56ab2f', '#a8e063', '#1e5128', '#191a19', '#ffffff'],
-    ['#89f7fe', '#66a6ff', '#355c7d', '#2a3f54', '#f8b195'],
-    ['#fbd786', '#f7797d', '#6a3093', '#3a1c71', '#fff6c8'],
-  ];
-  const photos = [];
-  for (const [i, [sky1, sky2, hill1, hill2, sun]] of scenes.entries()) {
-    await page.setContent(`<body style="margin:0;width:1920px;height:1080px;overflow:hidden;position:relative;
-      background:linear-gradient(180deg,${sky1},${sky2})">
-      <div style="position:absolute;width:260px;height:260px;border-radius:50%;background:${sun};left:${1200 - i * 180}px;top:${180 + i * 30}px;filter:blur(2px);box-shadow:0 0 120px ${sun}"></div>
-      <div style="position:absolute;left:-200px;right:-200px;bottom:-500px;height:1000px;border-radius:50%;background:${hill1}"></div>
-      <div style="position:absolute;left:600px;right:-600px;bottom:-650px;height:1000px;border-radius:50%;background:${hill2}"></div></body>`);
-    const file = path.join(FIX, `news-${i + 1}.png`);
-    await page.screenshot({ path: file });
-    photos.push(file);
-  }
   await page.close();
   let video = null;
   try {
@@ -124,7 +55,7 @@ async function makeFixtures(browser) {
   } catch {
     video = null;
   }
-  return { images: files, video, photos };
+  return { images: files, video };
 }
 
 async function waitFor(fn, { timeout = 15000, interval = 250, what = 'condition' } = {}) {
@@ -154,7 +85,6 @@ const visibleKind = (player) =>
   fs.mkdirSync(OUT, { recursive: true });
   const browser = await chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required'] });
   const fixtures = await makeFixtures(browser);
-  const feedServer = await startFeedServer(fixtures.photos);
   const failures = [];
 
   const dash = await (await browser.newContext({ viewport: { width: 1440, height: 900 } })).newPage();
@@ -321,64 +251,6 @@ const visibleKind = (player) =>
     assert.ok(held.same, 'the same image element is still on screen');
     assert.equal(held.changes, 0, 'no cross-fade or redraw happened');
 
-    // --- News: a feed shown as a slide
-    const newsName = `Headlines ${RUN}`;
-    log('Add a news feed from the dashboard: a bad URL is explained, a good one is added');
-    await dash.click('a[data-nav=media]');
-    await dash.click('#add-news');
-    await dash.waitForSelector('dialog .feed-picker');
-    assert.ok((await dash.locator('dialog input[name=feedChoice]').count()) > 10, 'popular feeds are offered');
-    await dash.click('dialog .chip:has-text("Custom feed URL")');
-    await dash.fill('dialog input[name=customUrl]', `${FEED_BASE}/not-a-feed`);
-    await dash.click('dialog button.primary');
-    await dash.waitForSelector('dialog .form-error:not([hidden])');
-    assert.match(await dash.textContent('dialog .form-error'), /RSS or Atom/);
-    await dash.fill('dialog input[name=customUrl]', `${FEED_BASE}/feed.xml`);
-    await dash.fill('dialog input[name=name]', newsName);
-    await dash.fill('dialog input[name=maxStories]', '4');
-    await dash.fill('dialog input[name=secondsPerStory]', '3');
-    await shot(dash, '12-dashboard-add-news');
-    await dash.click('dialog button.primary');
-    await dash.waitForSelector(`.tile:has(.tile-name[title="${newsName}"]) .news-thumb img`);
-    const tileText = await dash.textContent(`.tile:has(.tile-name[title="${newsName}"])`);
-    assert.match(tileText, /Sinewave Gazette · 4 stories/);
-    await shot(dash, '13-dashboard-media-news');
-
-    log('Put the news item in the playlist and watch it rotate through stories');
-    await dash.click('a[data-nav=playlists]');
-    await dash.click(`a:has-text("${plName}")`);
-    await dash.waitForSelector('#items .item');
-    while ((await dash.locator('#items [data-remove]').count()) > 0) await dash.locator('#items [data-remove]').first().click();
-    await add(newsName);
-    assert.equal(await dash.getAttribute('[data-dur]', 'placeholder'), '12', 'default is every story once');
-    await dash.click('#save');
-    await waitFor(async () => (await playing(player)) === newsName, { what: 'news slide', timeout: 8000 });
-    const storyTitle = () => player.evaluate(() => document.querySelector('.layer.visible .news-story:not(.leaving) .news-title')?.textContent);
-    await waitFor(async () => (await storyTitle()) === STORIES[0][0], { what: 'first headline' });
-    await waitFor(
-      () => player.evaluate(() => {
-        const img = document.querySelector('.layer.visible .news-media img:not(.leaving)');
-        return Boolean(img && img.naturalWidth > 0 && img.src.includes('/media/news/'));
-      }),
-      { what: 'story photo from the server' },
-    );
-    await player.waitForTimeout(1000);
-    await shot(player, '14-player-news-feature');
-    await waitFor(async () => (await storyTitle()) === STORIES[1][0], { what: 'second headline', timeout: 6000 });
-
-    log('Change the layout to Headlines and the screen follows');
-    await dash.click('a[data-nav=media]');
-    await dash.click(`.tile:has(.tile-name[title="${newsName}"]) [data-act=news]`);
-    await dash.click('dialog .layout-opt:has-text("Headlines")');
-    await dash.click('dialog button.primary');
-    await dash.waitForSelector('dialog', { state: 'hidden' });
-    await waitFor(() => player.evaluate(() => Boolean(document.querySelector('.layer.visible .news.layout-headlines .news-list li.current'))), {
-      what: 'headlines layout',
-      timeout: 20000,
-    });
-    await player.waitForTimeout(1200);
-    await shot(player, '15-player-news-headlines');
-
     // --- Slides: made in the dashboard from a template
     const slideName = `Quiz slide ${RUN}`;
     const slideTitle = `Quiz Night ${RUN}`;
@@ -437,17 +309,14 @@ const visibleKind = (player) =>
     while ((await dash.locator('#items [data-remove]').count()) > 0) await dash.locator('#items [data-remove]').first().click();
     await add('welcome');
     await add('menu');
-    await add(newsName);
     await add(slideName);
     if (fixtures.video) await add('countdown');
-    for (let i = 0; i < 2; i++) await dash.locator('[data-dur]').nth(i).fill('3');
-    await dash.locator('[data-dur]').nth(2).fill('4');
-    await dash.locator('[data-dur]').nth(3).fill('3');
+    for (let i = 0; i < 3; i++) await dash.locator('[data-dur]').nth(i).fill('3');
     await dash.click('#save');
-    await waitFor(async () => ['welcome', 'menu', newsName, slideName].includes(await playing(player)), { what: 'restored loop' });
+    await waitFor(async () => ['welcome', 'menu', slideName].includes(await playing(player)), { what: 'restored loop' });
 
     // --- Offline: everything cached, then cut the network and restart the player
-    const loopLength = fixtures.video ? 5 : 4;
+    const loopLength = fixtures.video ? 4 : 3;
     await waitFor(() => player.evaluate((n) => window.sinewavePlayer.state.manifest?.playlist?.items.length === n, loopLength), {
       what: 'restored loop in the manifest',
     });
@@ -472,7 +341,7 @@ const visibleKind = (player) =>
     log('Go offline and reload the player: it should boot and keep playing from cache');
     await playerCtx.setOffline(true);
     await player.reload();
-    await waitFor(async () => ['welcome', 'menu', 'countdown', newsName, slideName].includes(await playing(player)), { what: 'offline playback' });
+    await waitFor(async () => ['welcome', 'menu', 'countdown', slideName].includes(await playing(player)), { what: 'offline playback' });
     await waitFor(async () => (await visibleKind(player)) !== null, { what: 'visible media' });
     const seen = new Set();
     const end = Date.now() + (fixtures.video ? 21000 : 15000);
@@ -482,15 +351,6 @@ const visibleKind = (player) =>
         seen.add(n);
         await player.waitForTimeout(800);
         if (n === 'menu') await shot(player, '09-player-offline-playing');
-        if (n === newsName) {
-          const ok = await player.evaluate(() => {
-            const img = document.querySelector('.layer.visible .news-media img');
-            const title = document.querySelector('.layer.visible .news-title, .layer.visible .news-li-title');
-            return Boolean(img && img.complete && img.naturalWidth > 0 && title?.textContent);
-          });
-          assert.ok(ok, 'news slide shows headline and photo offline');
-          await shot(player, '16-player-news-offline');
-        }
         if (n === slideName) {
           const s = await slideOnScreen();
           assert.ok(s?.title && s.img, 'slide shows its text and picture offline');
@@ -507,7 +367,6 @@ const visibleKind = (player) =>
     }
     console.log(`    played offline: ${[...seen].join(', ')}`);
     assert.ok(seen.has('welcome') && seen.has('menu'), 'both slides played while offline');
-    assert.ok(seen.has(newsName), 'news played while offline');
     assert.ok(seen.has(slideName), 'slide played while offline');
     if (fixtures.video) assert.ok(seen.has('countdown'), 'video played while offline');
 
@@ -593,7 +452,6 @@ const visibleKind = (player) =>
   }
 
   await browser.close();
-  feedServer.close();
   if (failures.length) {
     console.error('\nFAILED\n' + failures.join('\n'));
     process.exit(1);

@@ -25,10 +25,9 @@ Sinewave aims to make it simple to run digital signage on ordinary hardware: bui
 ## What works today
 
 - **Dashboard** to upload images and videos, add web pages, and build playlists (ordering and per-item durations).
+- **Default playlist**: everything you add (uploads, web pages, slides) is also put at the end of a playlist called **Default**, which is created if it doesn't exist. Remove items from it or rename it any time.
 - **Slides**: make a slide right in the dashboard. Pick a template (announcement, welcome, event, menu or list, big message), pick one of the built-in backgrounds or use your own picture, type your text and add a logo or photo if you like. A live preview shows exactly what screens will show, and edits reach screens straight away. Slides are drawn by the player, so they are sharp at any resolution, fit portrait screens too, and work offline.
 - **Web page previews**: when you add a web page, the server takes a small screenshot of it with headless Chromium (bundled in the Docker image) and shows it on the media card, so you can tell pages apart at a glance. If a screenshot isn't possible, it uses the picture the page offers for link previews. **Refresh preview** on the card takes a new one.
-- **News**: add headlines from popular feeds (BBC, Sky, The Guardian and more) or any RSS or Atom URL, shown as a full-screen slide that rotates through the stories. Pick a layout (feature photo, split, or a headlines list), light or dark theme, accent colour, number of stories and time per story. Feeds are fetched by the server every 15 minutes, and screens keep the latest stories and photos for offline playback.
-- **Ticket stats from Autotask**: show live service desk numbers on screens: open tickets, new and closed today, tickets per queue, SLA breaches and tickets at risk, SLA met over the last 7 days, and opened against closed for the week. Pick a layout (overview, big numbers, queue board, hot list or trend), filter by queue, status and priority, and set amber and red thresholds for each number. A **Hide private information** option leaves out company names and ticket titles for screens visitors or customers can see. A super admin connects Autotask under **Integrations** with an API user; the server checks Autotask every couple of minutes and screens only ever get the numbers, never the credentials. Until it's connected, widgets show realistic demo data.
 - **Screen pairing**: open the player on a display, it shows a 6-character code, and you type that code into the dashboard.
 - **Live updates**: each player keeps a WebSocket open, so a saved playlist shows up on screen in well under a second. Polling covers the gaps if the socket drops.
 - **Offline playback**: the player caches its files with a service worker and keeps looping them if the network or server goes away, including after a reboot.
@@ -40,11 +39,7 @@ Sinewave aims to make it simple to run digital signage on ordinary hardware: bui
 | --- | --- | --- |
 | ![](docs/images/dashboard-playlist-editor.png) | ![](docs/images/player-pairing-code.png) | ![](docs/images/player-playing-menu.png) |
 
-![A news slide on the player](docs/images/player-news-feature.png)
-
 ![Making a slide in the dashboard](docs/images/dashboard-slide-editor.png)
-
-![Ticket stats from Autotask on a screen (demo data)](docs/images/player-tickets-overview.png)
 
 ## Quick start
 
@@ -120,7 +115,6 @@ Browsers only allow service workers, and so offline caching, on **HTTPS** or **l
 | `PORT` | `8080` | Port published on the host. |
 | `MAX_UPLOAD_MB` | `1024` | Largest file you can upload. |
 | `SECURE_COOKIES` | `false` | Mark the session cookie `Secure` (set when using HTTPS). |
-| `NEWS_REFRESH_MINUTES` | `15` | How often news feeds are re-fetched. |
 | `WEB_PREVIEW_SCREENSHOTS` | `true` | Set to `false` to skip Chromium screenshots and only use a page's own preview picture (saves memory on very small devices). |
 | `TRUST_PROXY` | `false` | Trust `X-Forwarded-*` headers from a reverse proxy. |
 | `PUID` / `PGID` | `1000` / `1000` | User and group that own `/data` and run the server. The container fixes ownership of `/data` at startup, so a host folder mounted there just works. On Unraid use `99` / `100`. |
@@ -158,7 +152,7 @@ npm run dev                 # data goes in ./data unless DATA_DIR is set
 
 ### Tests
 
-Unit tests for feed parsing: `cd server && npm test`.
+Unit tests (slides, web previews, the Default playlist, migrations): `cd server && npm test`.
 
 ### End-to-end test
 
@@ -171,7 +165,7 @@ npx playwright install chromium
 npm test        # BASE_URL, ADMIN_USERNAME and ADMIN_PASSWORD can be overridden
 ```
 
-It uploads media, builds a playlist, pairs a headless player, checks that a playlist change reaches the screen live, makes a slide from a template, adds a news feed (served by the test itself on port 8098, so a Docker server needs `--network host` or `FEED_HOST=host.docker.internal`), then cuts the player's network and checks it keeps playing from its cache. Screenshots are written to `e2e/screenshots/`. If `ffmpeg` is installed the test also covers video.
+It uploads media, builds a playlist, pairs a headless player, checks that a playlist change reaches the screen live, makes a slide from a template then cuts the player's network and checks it keeps playing from its cache. Screenshots are written to `e2e/screenshots/`. If `ffmpeg` is installed the test also covers video.
 
 ## Status
 
